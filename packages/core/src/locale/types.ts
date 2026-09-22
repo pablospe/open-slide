@@ -313,6 +313,7 @@ export type Locale = {
       parentNotHost: string;
       mixedChildren: string;
       nameConflict: string;
+      nestedSteps: string;
       notStep: string;
       stepHasSiblings: string;
       noStepSibling: string;

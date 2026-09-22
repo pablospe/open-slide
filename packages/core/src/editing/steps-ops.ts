@@ -32,6 +32,7 @@ export type StepRefusal =
   | 'parent-not-host'
   | 'mixed-children'
   | 'name-conflict'
+  | 'nested-steps'
   | 'not-step'
   | 'step-has-siblings'
   | 'no-step-sibling'
@@ -71,6 +72,7 @@ const REFUSALS: Record<StepRefusal, string> = {
   'mixed-children':
     'the parent also holds text or expressions, which cannot be moved into a <Steps> container',
   'name-conflict': 'this file already defines another Step or Steps',
+  'nested-steps': 'steps nested inside other steps would reveal out of order',
   'not-step': 'the element is not a step',
   'step-has-siblings': 'the step holds more than one child, so it cannot be unwrapped',
   'no-step-sibling': 'there is no other step in that direction',
@@ -85,6 +87,7 @@ const CORE_MODULE = '@open-slide/core';
 const MARK = '\u0000';
 
 type Names = { step: string; steps: string };
+type KnownNames = { step: string | null; steps: string | null };
 
 function coreImports(ast: t.File): t.ImportDeclaration[] {
   return ast.program.body.filter(
@@ -141,15 +144,17 @@ function resolveNames(ast: t.File): { names: Names; missing: string[] } | null {
   return { names: { step, steps }, missing };
 }
 
-function knownNames(ast: t.File): Names {
+// Only the runtime's own components count: a slide may define its own `Step`.
+function knownNames(ast: t.File): KnownNames {
   return {
-    step: importedLocal(ast, 'Step') ?? 'Step',
-    steps: importedLocal(ast, 'Steps') ?? 'Steps',
+    step: importedLocal(ast, 'Step'),
+    steps: importedLocal(ast, 'Steps'),
   };
 }
 
-function isNamed(node: t.Node | null, name: string): boolean {
+function isNamed(node: t.Node | null, name: string | null): boolean {
   return (
+    name !== null &&
     t.isJSXElement(node) &&
     t.isJSXIdentifier(node.openingElement.name) &&
     node.openingElement.name.name === name
@@ -306,17 +311,38 @@ function markAt(offset: number): Splice {
   return { from: offset, to: offset, text: MARK };
 }
 
+function containsSteps(node: t.Node, names: Names): boolean {
+  let found = false;
+  walkAll(node, (child) => {
+    if (isNamed(child, names.step) || isNamed(child, names.steps)) {
+      found = true;
+      return 'stop';
+    }
+  });
+  return found;
+}
+
+function insideSteps(ast: t.File, node: t.Node, names: Names): boolean {
+  for (let at = findParent(ast, node); at; at = findParent(ast, at)) {
+    if (isNamed(at, names.step) || isNamed(at, names.steps)) return true;
+  }
+  return false;
+}
+
+// A <Steps> nested in another registers with the host first (child layout
+// effects run before the parent's), so its steps would reveal out of reading
+// order, or while their enclosing <Step> is still hidden.
 function planWrap(ctx: Ctx, element: t.JSXElement, parent: t.JSXElement | t.JSXFragment): StepPlan {
   const { ast, source } = ctx;
-  const known = knownNames(ast);
-  if (isNamed(element, known.step) || isNamed(element, known.steps) || isNamed(parent, known.step))
-    return refuse('already-step');
   const resolved = resolveNames(ast);
   if (!resolved) return refuse('name-conflict');
   const { names, missing } = resolved;
+  if (isNamed(element, names.step) || isNamed(element, names.steps) || isNamed(parent, names.step))
+    return refuse('already-step');
   const imports = importSplice(ast, source, missing);
   const withImports = (splice: Splice) => finish(source, imports ? [imports, splice] : [splice]);
 
+  if (containsSteps(element, names)) return refuse('nested-steps');
   if (isNamed(parent, names.steps)) {
     const unit = indentUnit(source, element, parent);
     const text = stepWrapText(ctx, element, names.step, unit, '');
@@ -329,6 +355,8 @@ function planWrap(ctx: Ctx, element: t.JSXElement, parent: t.JSXElement | t.JSXF
   const last = children.at(-1) ?? first;
   const run = { start: first.start ?? 0, end: last.end ?? 0 };
   if (source.slice(run.start, run.end).includes('@slide-comment')) return refuse('comment');
+  if (children.some((child) => containsSteps(child, names)) || insideSteps(ast, parent, names))
+    return refuse('nested-steps');
 
   const unit = indentUnit(source, first, parent);
   const block = !!ownedLines(source, run);
@@ -347,7 +375,7 @@ function planWrap(ctx: Ctx, element: t.JSXElement, parent: t.JSXElement | t.JSXF
 function enclosingStep(
   ast: t.File,
   element: t.JSXElement,
-  names: Names,
+  names: KnownNames,
 ): { step: t.JSXElement; steps: t.JSXElement | null } | null {
   const parent = findParent(ast, element);
   if (!t.isJSXElement(parent) || !isNamed(parent, names.step)) return null;
@@ -358,7 +386,7 @@ function enclosingStep(
   };
 }
 
-function stepSiblings(steps: t.JSXElement, names: Names): t.JSXElement[] {
+function stepSiblings(steps: t.JSXElement, names: KnownNames): t.JSXElement[] {
   return steps.children.filter(
     (child): child is t.JSXElement => t.isJSXElement(child) && isNamed(child, names.step),
   );
@@ -387,7 +415,7 @@ function planMove(
   step: t.JSXElement,
   steps: t.JSXElement,
   direction: 'earlier' | 'later',
-  names: Names,
+  names: KnownNames,
 ): StepPlan {
   const siblings = stepSiblings(steps, names);
   const index = siblings.indexOf(step);

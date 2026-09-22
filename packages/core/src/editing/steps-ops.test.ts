@@ -344,6 +344,27 @@ describe('wrap-in-step', () => {
       'name-conflict',
     ],
     [
+      'a sibling run that already holds <Steps>',
+      "import { Step, Steps } from '@open-slide/core';\nexport default [() => <div>\n  <h1>t</h1>\n  <Steps>\n    <Step><p>a</p></Step>\n  </Steps>\n</div>];\n",
+      '<h1>',
+      1,
+      'nested-steps',
+    ],
+    [
+      'an element nested deeper inside a <Step>',
+      "import { Step, Steps } from '@open-slide/core';\nexport default [() => <Steps>\n  <Step>\n    <div>\n      <p>a</p>\n    </div>\n  </Step>\n</Steps>];\n",
+      '<p>',
+      1,
+      'nested-steps',
+    ],
+    [
+      'an element that contains <Steps>',
+      "import { Step, Steps } from '@open-slide/core';\nexport default [() => <Steps>\n  <div>\n    <Steps><Step><p>a</p></Step></Steps>\n  </div>\n</Steps>];\n",
+      '<div>',
+      1,
+      'nested-steps',
+    ],
+    [
       'a .map() template',
       'export default [() => <div>{xs.map((x) => <p key={x}>{x}</p>)}</div>];\n',
       '<p',
@@ -406,6 +427,34 @@ describe('unwrap-step', () => {
 
   it('refuses an element that is not a step', () => {
     expect(refusal(run(stepped, '<p>Three', { kind: 'unwrap-step' }))).toBe('not-step');
+  });
+});
+
+describe('local Step components', () => {
+  const local = lines(
+    'function Step({ children }: { children: React.ReactNode }) {',
+    '  return <section>{children}</section>;',
+    '}',
+    'export default [() => (',
+    '  <div>',
+    '    <Step>',
+    '      <h1>t</h1>',
+    '    </Step>',
+    '  </div>',
+    ')];',
+    '',
+  );
+
+  it.each<EditOp>([
+    { kind: 'unwrap-step' },
+    { kind: 'set-step-duration', value: 100 },
+    { kind: 'move-step', direction: 'later' },
+  ])('are not treated as steps by $kind', (op) => {
+    expect(refusal(run(local, '<h1>', op))).toBe('not-step');
+  });
+
+  it('report the element as not a step', () => {
+    expect(info(local, '<h1>').inStep).toBe(false);
   });
 });
 

@@ -317,6 +317,7 @@ export const zhCN: Locale = {
       parentNotHost: 'its parent is a component or fragment and cannot become a <Steps> container.',
       mixedChildren: 'its parent also holds text or expressions, which cannot move into <Steps>.',
       nameConflict: 'this file already defines its own Step or Steps.',
+      nestedSteps: 'steps inside other steps would reveal out of order.',
       notStep: 'the element is not a step.',
       stepHasSiblings: 'the step holds more than one element.',
       noStepSibling: 'there is no other step in that direction.',

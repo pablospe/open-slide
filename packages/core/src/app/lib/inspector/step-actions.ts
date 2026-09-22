@@ -51,6 +51,7 @@ const REFUSAL_LABELS: Record<string, keyof Locale['inspector']['stepRefusals']> 
   'parent-not-host': 'parentNotHost',
   'mixed-children': 'mixedChildren',
   'name-conflict': 'nameConflict',
+  'nested-steps': 'nestedSteps',
   'not-step': 'notStep',
   'step-has-siblings': 'stepHasSiblings',
   'no-step-sibling': 'noStepSibling',
