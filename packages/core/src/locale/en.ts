@@ -222,6 +222,11 @@ export const en: Locale = {
       'This <{tag}> comes from the layout or an imported component, not {file}. Pick an element written in that file.',
     sharedInstancesHint:
       'Rendered {count} times from this line. Style edits change every copy, and it can’t be moved on its own.',
+    dynamicTextHint:
+      'Contains dynamic text computed in code, so it can’t be edited here. Edit it in source.',
+    dynamicTextSharedHint:
+      'Contains dynamic text and is rendered {count} times from one shared definition. Edit it in source.',
+    textEditRefused: 'This text contains dynamic text computed in code. Edit it in source.',
     rotateHandle: 'Rotate element',
     resizeHandle: 'Resize {handle}',
     arrangeSection: 'Arrange',

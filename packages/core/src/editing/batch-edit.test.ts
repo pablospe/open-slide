@@ -16,6 +16,17 @@ function edit(source: string, marker: string, ops: EditOp[]): BatchEdit {
 const style = (key: string, value: string): EditOp => ({ kind: 'set-style', key, value });
 
 describe('applyEditBatch', () => {
+  it('refuses dynamic text and leaves the source untouched', () => {
+    const source = '<footer><span>{a} / {b}</span><p>Plain</p></footer>';
+    const result = applyEditBatch(source, [
+      edit(source, '<span', [{ kind: 'set-text', value: '1 of 2', prevText: '1 / 2' }]),
+      edit(source, '<p', [{ kind: 'set-text', value: 'Edited', prevText: 'Plain' }]),
+    ]);
+    expect(result.results[0]).toMatchObject({ ok: false, code: 'dynamic-text' });
+    expect(result.results[1]).toEqual({ ok: true });
+    expect(result.source).toBe('<footer><span>{a} / {b}</span><p>Edited</p></footer>');
+  });
+
   it('keeps dependent formatting and typing on text that now matches a sibling', () => {
     const source = '<section><h1>Title</h1><p>Body</p></section>';
     const result = applyEditBatch(source, [

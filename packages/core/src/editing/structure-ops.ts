@@ -103,6 +103,26 @@ export function isReusedComponent(ast: t.File, element: t.JSXElement): boolean {
   return uses > 1;
 }
 
+// How many times `element` is rendered through this file's components: a
+// footer used once inside a page layout used on every page counts per page.
+// Recursion stops at a component already on the path.
+export function componentRenderCount(
+  ast: t.File,
+  element: t.Node,
+  seen: ReadonlySet<string> = new Set(),
+): number {
+  const component = findEnclosingComponent(ast, element);
+  if (!component || seen.has(component.name)) return 1;
+  const path = new Set(seen).add(component.name);
+  let count = 0;
+  walkAll(ast, (node) => {
+    if (!t.isJSXOpeningElement(node)) return;
+    if (!t.isJSXIdentifier(node.name) || node.name.name !== component.name) return;
+    count += componentRenderCount(ast, node, path);
+  });
+  return Math.max(count, 1);
+}
+
 export function offsetToLocation(source: string, offset: number): SourceLocation {
   const before = source.slice(0, offset);
   return { line: before.split('\n').length, column: offset - before.lastIndexOf('\n') - 1 };

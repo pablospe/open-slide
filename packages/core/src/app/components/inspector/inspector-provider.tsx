@@ -25,6 +25,7 @@ import { type Edit, type EditOp, useEditor } from '@/lib/inspector/use-editor';
 import { useInsertSnippet } from '@/lib/inspector/use-insert-snippet';
 import { useStepActions } from '@/lib/inspector/use-step-actions';
 import { useStructureActions } from '@/lib/inspector/use-structure-actions';
+import { type TextEditRefusal, useTextEditCheck } from '@/lib/inspector/use-text-edit-check';
 import { useVisualEditor, type VisualEdit } from '@/lib/inspector/use-visual-editor';
 import { isShortcutControlTarget, isTypingTarget } from '@/lib/keys';
 import { textDiff } from '@/lib/text-diff';
@@ -347,6 +348,9 @@ type InspectorCtx = {
   applyInlineStyle: InlineStyleHandler;
   startInlineEdit: (target: InlineEditTarget) => void;
   stopInlineEdit: () => void;
+  // Set when the selected text cannot be written back to source (e.g. it
+  // includes expression output); inline editing is not offered then.
+  textRefusal: TextEditRefusal | null;
   // Bumped on every buffered-op mutation (including undo/redo restores) so
   // panels can re-read DOM snapshots without polling.
   opsVersion: number;
@@ -830,6 +834,22 @@ export function InspectorProvider({
     onApplied: history.clear,
   });
 
+  // Buffered edits change the DOM, not the source, so the check keeps asking
+  // about the text as it was before them.
+  const sourceText = useCallback((anchor: HTMLElement) => {
+    const loc = anchor.dataset.slideLoc;
+    const instanceId = anchor.getAttribute(INSTANCE_ID_ATTR);
+    const orig =
+      loc && instanceId ? pendingRef.current.get(loc)?.origTexts.get(instanceId) : undefined;
+    return orig?.value ?? readEditableText(anchor);
+  }, []);
+  const textCheck = useTextEditCheck({
+    active,
+    slideId,
+    target: selection.length === 1 ? selected : null,
+    readText: sourceText,
+  });
+
   const pendingStyleValue = useCallback(
     (line: number, column: number, key: string) =>
       pendingRef.current.get(`${line}:${column}`)?.styleOps.get(key)?.value,
@@ -1159,7 +1179,7 @@ export function InspectorProvider({
   }, [setSelected]);
 
   const inlineEditSessionRef = useRef(0);
-  const startInlineEdit = useCallback(
+  const beginInlineEdit = useCallback(
     (target: InlineEditTarget) => {
       inlineBaselinesRef.current.set(target.anchor, {
         text: readEditableText(target.anchor),
@@ -1170,6 +1190,39 @@ export function InspectorProvider({
       setInlineEdit({ ...target, session: ++inlineEditSessionRef.current });
     },
     [setSelection],
+  );
+
+  const textCheckRef = useRef(textCheck.check);
+  textCheckRef.current = textCheck.check;
+  const inlineRequestRef = useRef(0);
+  // Any later click or Escape supersedes an edit still waiting on its check.
+  useEffect(() => {
+    const cancel = (event: Event) => {
+      if (event instanceof KeyboardEvent && event.key !== 'Escape') return;
+      inlineRequestRef.current += 1;
+    };
+    window.addEventListener('pointerdown', cancel, true);
+    window.addEventListener('keydown', cancel, true);
+    return () => {
+      window.removeEventListener('pointerdown', cancel, true);
+      window.removeEventListener('keydown', cancel, true);
+    };
+  }, []);
+  // Selecting the target first lets the panel show why editing is refused.
+  const startInlineEdit = useCallback(
+    (target: InlineEditTarget) => {
+      const request = ++inlineRequestRef.current;
+      setSelection([{ line: target.line, column: target.column, anchor: target.anchor }]);
+      void textCheckRef.current(target).then((refusal) => {
+        if (request !== inlineRequestRef.current || !target.anchor.isConnected) return;
+        if (refusal) {
+          toast.error(t.inspector.textEditRefused);
+          return;
+        }
+        beginInlineEdit(target);
+      });
+    },
+    [setSelection, beginInlineEdit, t],
   );
 
   const stopInlineEdit = useCallback(() => {
@@ -1266,6 +1319,7 @@ export function InspectorProvider({
       applyInlineStyle,
       startInlineEdit,
       stopInlineEdit,
+      textRefusal: textCheck.refusal,
       opsVersion,
       applyEdit,
       bufferOps,
@@ -1304,6 +1358,7 @@ export function InspectorProvider({
       applyInlineStyle,
       startInlineEdit,
       stopInlineEdit,
+      textCheck.refusal,
       opsVersion,
       applyEdit,
       bufferOps,

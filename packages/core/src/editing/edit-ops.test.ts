@@ -1336,7 +1336,7 @@ describe('applyEdit / set-text', () => {
     const r = applyEdit(src, 2, 2, [{ kind: 'set-text', value: 'X', prevText: 'Hello' }]);
     expect(r.ok).toBe(false);
     if (r.ok) throw new Error('expected failure');
-    expect(r.error).toMatch(/no editable text/);
+    expect(r.code).toBe('dynamic-text');
   });
 
   it('routes a `.map()` MemberExpression child to the matching array entry', () => {
@@ -1414,7 +1414,7 @@ describe('applyEdit / set-text', () => {
     const r = applyEdit(src, 6, 6, [{ kind: 'set-text', value: 'X', prevText: 'hi' }]);
     expect(r.ok).toBe(false);
     if (r.ok) throw new Error('expected failure');
-    expect(r.error).toMatch(/no editable text/);
+    expect(r.code).toBe('dynamic-text');
   });
 
   it('bails on a prop pass-through when the call site uses a non-literal value', () => {
@@ -1431,7 +1431,180 @@ describe('applyEdit / set-text', () => {
     const r = applyEdit(src, 3, 2, [{ kind: 'set-text', value: 'X', prevText: 'Hello' }]);
     expect(r.ok).toBe(false);
     if (r.ok) throw new Error('expected failure');
-    expect(r.error).toMatch(/no editable text/);
+    expect(r.code).toBe('dynamic-text');
+  });
+});
+
+describe('applyEdit / mixed literal and expression text', () => {
+  const footer = [
+    'const master = { footerLabel: "FADE BASICS" };',
+    'const Footer = ({ current, total }: { current: number; total: number }) => (',
+    '  <footer>',
+    '    <span>{master.footerLabel}</span>',
+    '    <span>',
+    "      {String(current).padStart(2, '0')} / {String(total).padStart(2, '0')}",
+    '    </span>',
+    '  </footer>',
+    ');',
+    'export default [',
+    '  () => <Footer current={5} total={6} />,',
+    '  () => <Footer current={6} total={6} />,',
+    '];',
+    '',
+  ].join('\n');
+
+  it('refuses the footer span whose only literal sits between two expressions', () => {
+    const r = applyEdit(footer, 5, 4, [
+      { kind: 'set-text', value: '05 of 06', prevText: '05 / 06' },
+    ]);
+    expect(r).toMatchObject({ ok: false, status: 422, code: 'dynamic-text', callSites: 2 });
+    if (!r.ok) expect(r.error).toMatch(/rendered 2 times/);
+  });
+
+  it('refuses the whole footer, which renders an expression-only span next to it', () => {
+    const r = applyEdit(footer, 3, 2, [
+      { kind: 'set-text', value: 'FADE BASICS 05 / 06!', prevText: 'FADE BASICS05 / 06' },
+    ]);
+    expect(r).toMatchObject({ ok: false, code: 'dynamic-text' });
+  });
+
+  it('refuses a mixed element when prevText is missing', () => {
+    const r = applyEdit(footer, 5, 4, [{ kind: 'set-text', value: 'x' }]);
+    expect(r).toMatchObject({ ok: false, code: 'dynamic-text' });
+  });
+
+  it('refuses a range style on a mixed element', () => {
+    const withoutPrev = applyEdit(footer, 5, 4, [
+      { kind: 'set-text-range-style', start: 0, end: 2, key: 'fontWeight', value: '700' },
+    ]);
+    expect(withoutPrev).toMatchObject({ ok: false, code: 'dynamic-text' });
+    const withPrev = applyEdit(footer, 5, 4, [
+      {
+        kind: 'set-text-range-style',
+        start: 0,
+        end: 2,
+        key: 'fontWeight',
+        value: '700',
+        prevText: '05 / 06',
+      },
+    ]);
+    expect(withPrev).toMatchObject({ ok: false, code: 'dynamic-text' });
+  });
+
+  it('counts renders through a layout component used on every page', () => {
+    const src = [
+      'const Footer = ({ n }: { n: number }) => <footer>Page {n}</footer>;',
+      'const Master = ({ children }: { children: React.ReactNode }) => (',
+      '  <main>',
+      '    {children}',
+      '    <Footer n={1} />',
+      '  </main>',
+      ');',
+      'export default [',
+      '  () => <Master>One</Master>,',
+      '  () => <Master>Two</Master>,',
+      '  () => <Master>Three</Master>,',
+      '];',
+      '',
+    ].join('\n');
+    const r = applyEdit(src, 1, 41, [{ kind: 'set-text', value: 'P 1', prevText: 'Page 1' }]);
+    expect(r).toMatchObject({ ok: false, code: 'dynamic-text', callSites: 3 });
+  });
+
+  it('refuses a literal followed by one expression', () => {
+    const src = ['export default [() => (', '  <p>Page {3 + 2}</p>', ')];', ''].join('\n');
+    const r = applyEdit(src, 2, 2, [{ kind: 'set-text', value: 'Slide 5', prevText: 'Page 5' }]);
+    expect(r).toMatchObject({ ok: false, code: 'dynamic-text', callSites: 1 });
+  });
+
+  it('refuses an element made only of expressions', () => {
+    const src = [
+      'const a = 1;',
+      'const b = 2;',
+      'export default [() => (',
+      '  <p>',
+      '    {a} {b}',
+      '  </p>',
+      ')];',
+      '',
+    ].join('\n');
+    const r = applyEdit(src, 4, 2, [{ kind: 'set-text', value: '1 3', prevText: '1 2' }]);
+    expect(r).toMatchObject({ ok: false, code: 'dynamic-text' });
+  });
+
+  it('refuses a literal next to an expression nested in a child element', () => {
+    const src = [
+      'const name = "Ada";',
+      'export default [() => (',
+      '  <p>',
+      '    Hello <b>{name}</b>',
+      '  </p>',
+      ')];',
+      '',
+    ].join('\n');
+    const r = applyEdit(src, 3, 2, [
+      { kind: 'set-text', value: 'Hello Ada!', prevText: 'Hello Ada' },
+    ]);
+    expect(r).toMatchObject({ ok: false, code: 'dynamic-text' });
+  });
+
+  it('edits only the literal when the expressions render nothing', () => {
+    const src = [
+      'const note = null;',
+      'export default [() => (',
+      '  <p>',
+      '    {note}Hello world',
+      '  </p>',
+      ')];',
+      '',
+    ].join('\n');
+    const r = applyEdit(src, 3, 2, [
+      { kind: 'set-text', value: 'Hello there', prevText: 'Hello world' },
+    ]);
+    if (!r.ok) throw new Error(`expected ok, got ${r.error}`);
+    expect(r.source).toContain('{note}Hello there');
+  });
+
+  it('refuses a call site that mixes literal children with an expression', () => {
+    const src = [
+      'const n = 3;',
+      'const Label = ({ children }: { children: React.ReactNode }) => <span>{children}</span>;',
+      'export default [() => (',
+      '  <Label>Page {n}</Label>',
+      ')];',
+      '',
+    ].join('\n');
+    const r = applyEdit(src, 2, 63, [{ kind: 'set-text', value: 'Slide 3', prevText: 'Page 3' }]);
+    expect(r).toMatchObject({ ok: false, code: 'dynamic-text' });
+    expect(applyEdit(src, 2, 63, [{ kind: 'set-text', value: 'x' }])).toMatchObject({
+      ok: false,
+    });
+  });
+
+  it('still edits plain literal text', () => {
+    const plain = ['export default [() => (', '  <p>text</p>', ')];', ''].join('\n');
+    const r1 = applyEdit(plain, 2, 2, [{ kind: 'set-text', value: 'next', prevText: 'text' }]);
+    if (!r1.ok) throw new Error(r1.error);
+    expect(r1.source).toContain('<p>next</p>');
+
+    const literal = ['export default [() => (', "  <p>{'literal'}</p>", ')];', ''].join('\n');
+    const r2 = applyEdit(literal, 2, 2, [
+      { kind: 'set-text', value: 'changed', prevText: 'literal' },
+    ]);
+    if (!r2.ok) throw new Error(r2.error);
+    expect(r2.source).toContain("<p>{'changed'}</p>");
+  });
+
+  it('keeps literal expression and comment children editable', () => {
+    const src = ['export default [() => (', "  <p>{/* note */}Hello{' '}world</p>", ')];', ''].join(
+      '\n',
+    );
+    const r = applyEdit(src, 2, 2, [
+      { kind: 'set-text', value: 'Hello there', prevText: 'Hello world' },
+    ]);
+    if (!r.ok) throw new Error(r.error);
+    expect(r.source).toContain('there');
+    expect(r.source).toContain('{/* note */}');
   });
 });
 
