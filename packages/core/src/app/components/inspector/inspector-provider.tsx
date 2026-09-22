@@ -105,18 +105,21 @@ function normalizeDomTextParts(parts: DomTextPart[]): DomTextPart[] {
   return parts.flatMap((part, index) => {
     if (part.current === '\n') return [part];
     let current = part.current;
-    if (parts[index - 1]?.current === '\n') current = current.replace(/^\s+/, '');
-    if (parts[index + 1]?.current === '\n') current = current.replace(/\s+$/, '');
+    if (parts[index - 1]?.current === '\n') current = current.replace(/^[ \t\n\r\f]+/, '');
+    if (parts[index + 1]?.current === '\n') current = current.replace(/[ \t\n\r\f]+$/, '');
     return current ? [{ ...part, current }] : [];
   });
 }
 
-function renderedTextNodeValue(node: Text): string {
+export function preservesWhitespace(node: Text): boolean {
   const whiteSpace = node.parentElement ? getComputedStyle(node.parentElement).whiteSpace : '';
-  if (whiteSpace === 'pre' || whiteSpace === 'pre-wrap' || whiteSpace === 'break-spaces') {
-    return node.data;
-  }
-  return node.data.replace(/\s+/g, ' ');
+  return whiteSpace === 'pre' || whiteSpace === 'pre-wrap' || whiteSpace === 'break-spaces';
+}
+
+function renderedTextNodeValue(node: Text): string {
+  if (preservesWhitespace(node)) return node.data;
+  // Not `\s`: CSS keeps NBSP and U+3000, and the server matches on the same set.
+  return node.data.replace(/[ \t\n\r\f]+/g, ' ');
 }
 
 function textFragment(value: string): DocumentFragment {
@@ -353,7 +356,13 @@ export function InspectorProvider({
   // Mutate bucket + DOM without recording history. Shared by `bufferOps`
   // (the public, history-recording entry point) and by `redo` closures.
   const applyOpsRaw = useCallback(
-    (line: number, column: number, anchor: HTMLElement | null, ops: EditOp[]) => {
+    (
+      line: number,
+      column: number,
+      anchor: HTMLElement | null,
+      ops: EditOp[],
+      { trustPrevText = false }: { trustPrevText?: boolean } = {},
+    ) => {
       const key = `${line}:${column}`;
       let bucket = pendingRef.current.get(key);
       if (!bucket) {
@@ -410,7 +419,11 @@ export function InspectorProvider({
           if (!anchor) continue;
           const instanceId = ensureInstanceId(anchor);
           if (!bucket.origTexts.has(instanceId)) {
-            bucket.origTexts.set(instanceId, { value: readEditableText(anchor) });
+            // The editor mutates the DOM before buffering, so only its captured
+            // prevText is the original; a redo replays after the DOM was
+            // restored, where that prevText is stale.
+            const original = trustPrevText ? op.prevText : undefined;
+            bucket.origTexts.set(instanceId, { value: original ?? readEditableText(anchor) });
           }
           bucket.textOps.set(instanceId, { value: op.value, seq });
           if (anchor.isConnected) setEditableText(anchor, op.value);
@@ -632,7 +645,7 @@ export function InspectorProvider({
         ? ensureInstanceId(anchor)
         : undefined;
       const snaps = snapshotForOps(line, column, anchor, ops);
-      applyOpsRaw(line, column, anchor, ops);
+      applyOpsRaw(line, column, anchor, ops, { trustPrevText: true });
       const first = ops[0];
       const opKey = first
         ? first.kind === 'set-style'
@@ -735,6 +748,7 @@ export function InspectorProvider({
           },
           onSuccess: (b) => {
             b.textOps.delete(instanceId);
+            b.origTexts.delete(instanceId);
           },
         });
       }
