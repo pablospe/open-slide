@@ -4,11 +4,20 @@ export type Rect = Point & { width: number; height: number };
 
 export type Alignment = 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom';
 
+export type GuideKind = 'object' | 'third' | 'grid';
+
 export type Guide = {
   axis: 'x' | 'y';
   position: number;
   start: number;
   end: number;
+  kind?: GuideKind;
+};
+
+export type SnapOptions = {
+  canvas?: Pick<Rect, 'width' | 'height'>;
+  thirds?: boolean;
+  grid?: number | null;
 };
 
 export type ResizeHandle = 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'nw';
@@ -30,26 +39,89 @@ function anchors(rect: Rect, axis: 'x' | 'y'): number[] {
   return [rect[axis], rect[axis] + size / 2, rect[axis] + size];
 }
 
-function nearestSnap(rect: Rect, targets: Rect[], axis: 'x' | 'y', threshold: number) {
-  let best: { correction: number; position: number } | null = null;
-  for (const target of targets) {
-    for (const position of anchors(target, axis)) {
-      for (const anchor of anchors(rect, axis)) {
-        const correction = position - anchor;
-        const distance = Math.abs(correction);
-        if (distance > threshold) continue;
-        if (
-          !best ||
-          distance < Math.abs(best.correction) ||
-          (distance === Math.abs(best.correction) && correction < best.correction) ||
-          (correction === best.correction && position < best.position)
-        ) {
-          best = { correction, position };
-        }
+function canvasSize(canvas: Pick<Rect, 'width' | 'height'>, axis: 'x' | 'y'): number {
+  return axis === 'x' ? canvas.width : canvas.height;
+}
+
+export function thirdLines(canvas: Pick<Rect, 'width' | 'height'>, axis: 'x' | 'y'): number[] {
+  const size = canvasSize(canvas, axis);
+  return [size / 3, (size * 2) / 3];
+}
+
+type Snap = { correction: number; position: number; kind: GuideKind };
+
+function snapLines(targets: Rect[], axis: 'x' | 'y', options: SnapOptions) {
+  return [
+    ...targets.flatMap((target) =>
+      anchors(target, axis).map((position) => ({ position, kind: 'object' as const })),
+    ),
+    ...(options.thirds && options.canvas
+      ? thirdLines(options.canvas, axis).map((position) => ({ position, kind: 'third' as const }))
+      : []),
+  ];
+}
+
+function nearestSnap(
+  values: number[],
+  targets: Rect[],
+  axis: 'x' | 'y',
+  threshold: number,
+  options: SnapOptions,
+): Snap | null {
+  let best: Snap | null = null;
+  for (const line of snapLines(targets, axis, options)) {
+    for (const value of values) {
+      const correction = line.position - value;
+      const distance = Math.abs(correction);
+      if (distance > threshold) continue;
+      if (
+        !best ||
+        distance < Math.abs(best.correction) ||
+        (distance === Math.abs(best.correction) && correction < best.correction) ||
+        (correction === best.correction && line.position < best.position)
+      ) {
+        best = { correction, position: line.position, kind: line.kind };
       }
     }
   }
-  return best;
+  if (best || !options.grid || options.grid <= 0) return best;
+  // The grid is the fallback anchor: objects and thirds in reach win, otherwise the leading edge
+  // is quantised unconditionally.
+  const position = Math.round(values[0] / options.grid) * options.grid;
+  return { correction: position - values[0], position, kind: 'grid' };
+}
+
+function snapGuide(
+  axis: 'x' | 'y',
+  snap: Snap,
+  snapped: Rect,
+  targets: Rect[],
+  options: SnapOptions,
+): Guide | null {
+  if (snap.kind !== 'object' && options.canvas) {
+    return {
+      axis,
+      position: snap.position,
+      start: 0,
+      end: canvasSize(options.canvas, axis === 'x' ? 'y' : 'x'),
+      kind: snap.kind,
+    };
+  }
+  const aligned =
+    snap.kind === 'object'
+      ? targets.filter((target) =>
+          anchors(target, axis).some((anchor) => Math.abs(anchor - snap.position) < 0.000001),
+        )
+      : [];
+  const bounds = unionRects([snapped, ...aligned]);
+  if (!bounds) return null;
+  return {
+    axis,
+    position: snap.position,
+    start: axis === 'x' ? bounds.y : bounds.x,
+    end: axis === 'x' ? bounds.y + bounds.height : bounds.x + bounds.width,
+    kind: snap.kind,
+  };
 }
 
 export function snapMove(
@@ -57,10 +129,11 @@ export function snapMove(
   delta: Point,
   targets: Rect[],
   threshold: number,
+  options: SnapOptions = {},
 ): { delta: Point; guides: Guide[] } {
   const moved = { ...rect, x: rect.x + delta.x, y: rect.y + delta.y };
-  const xSnap = nearestSnap(moved, targets, 'x', threshold);
-  const ySnap = nearestSnap(moved, targets, 'y', threshold);
+  const xSnap = nearestSnap(anchors(moved, 'x'), targets, 'x', threshold, options);
+  const ySnap = nearestSnap(anchors(moved, 'y'), targets, 'y', threshold, options);
   const snappedDelta = {
     x: delta.x + (xSnap?.correction ?? 0),
     y: delta.y + (ySnap?.correction ?? 0),
@@ -70,19 +143,42 @@ export function snapMove(
   for (const axis of ['x', 'y'] as const) {
     const snap = axis === 'x' ? xSnap : ySnap;
     if (!snap) continue;
-    const aligned = targets.filter((target) =>
-      anchors(target, axis).some((anchor) => Math.abs(anchor - snap.position) < 0.000001),
-    );
-    const bounds = unionRects([snapped, ...aligned]);
-    if (!bounds) continue;
-    guides.push({
-      axis,
-      position: snap.position,
-      start: axis === 'x' ? bounds.y : bounds.x,
-      end: axis === 'x' ? bounds.y + bounds.height : bounds.x + bounds.width,
-    });
+    const guide = snapGuide(axis, snap, snapped, targets, options);
+    if (guide) guides.push(guide);
   }
   return { delta: snappedDelta, guides };
+}
+
+export function snapResize(
+  frame: Rect,
+  handle: ResizeHandle,
+  targets: Rect[],
+  threshold: number,
+  options: SnapOptions = {},
+): { frame: Rect; guides: Guide[] } {
+  const next = { ...frame };
+  const snaps: Array<{ axis: 'x' | 'y'; snap: Snap }> = [];
+  const edges = [
+    { axis: 'x' as const, start: handle.includes('w'), end: handle.includes('e') },
+    { axis: 'y' as const, start: handle.includes('n'), end: handle.includes('s') },
+  ];
+  for (const { axis, start, end } of edges) {
+    if (!start && !end) continue;
+    const size = axis === 'x' ? 'width' : 'height';
+    const edge = start ? frame[axis] : frame[axis] + frame[size];
+    const snap = nearestSnap([edge], targets, axis, threshold, options);
+    if (!snap) continue;
+    const nextSize = frame[size] + (start ? -snap.correction : snap.correction);
+    if (nextSize < 8) continue;
+    next[size] = nextSize;
+    if (start) next[axis] = frame[axis] + snap.correction;
+    snaps.push({ axis, snap });
+  }
+  const guides = snaps.flatMap(({ axis, snap }) => {
+    const guide = snapGuide(axis, snap, next, targets, options);
+    return guide ? [guide] : [];
+  });
+  return { frame: next, guides };
 }
 
 export function alignRects(rects: Rect[], alignment: Alignment, bounds?: Rect): Point[] {

@@ -7,17 +7,25 @@ import { type Alignment, alignRects, distributeRects, unionRects } from './geome
 import type { EditOp } from './use-editor';
 import {
   type Canvas,
+  type ClearLayoutScope,
   canTransform,
   captureTransform,
+  clearLayoutOps,
   editableTargets,
   independentTargets,
+  LAYER_INSET_KEYS,
+  LAYER_INSET_VALUE,
+  LAYER_POSITION_STYLE,
   moveOps,
   previewOps,
+  ROTATE_STYLE_KEY,
   readCanvas,
   readFrame,
+  readInlineLayout,
   restoreTransform,
   sizeOps,
   styleOp,
+  Z_INDEX_KEY,
 } from './visual-dom';
 
 export type VisualEdit = SelectedTarget & { ops: EditOp[] };
@@ -29,6 +37,9 @@ export type FramePatch = {
   rotation?: number;
 };
 export type ArrangeDirection = 'front' | 'back' | 'forward' | 'backward';
+export type GridSnap = { enabled: boolean; size: number };
+
+export const DEFAULT_GRID_SIZE = 8;
 
 function isFlexOrGridItem(node: HTMLElement): boolean {
   const display = node.parentElement ? getComputedStyle(node.parentElement).display : '';
@@ -48,24 +59,18 @@ function layerOps(node: HTMLElement, level: number): EditOp[] {
   return [
     ...(position === 'static' && !isFlexOrGridItem(node)
       ? [
-          styleOp('position', 'relative'),
-          ...[
-            'inset',
-            'insetInline',
-            'insetBlock',
-            'insetInlineStart',
-            'insetInlineEnd',
-            'insetBlockStart',
-            'insetBlockEnd',
-            'top',
-            'right',
-            'bottom',
-            'left',
-          ].map((key) => styleOp(key, 'auto')),
+          ...Object.entries(LAYER_POSITION_STYLE).map(([key, value]) => styleOp(key, value)),
+          ...LAYER_INSET_KEYS.map((key) => styleOp(key, LAYER_INSET_VALUE)),
         ]
       : []),
-    styleOp('zIndex', String(level)),
+    styleOp(Z_INDEX_KEY, String(level)),
   ];
+}
+
+function anchorsPositionedDescendants(node: HTMLElement): boolean {
+  return Array.from(node.querySelectorAll<HTMLElement>('*')).some(
+    (child) => child.offsetParent === node && getComputedStyle(child).position === 'absolute',
+  );
 }
 
 function preserveLayerLayout(
@@ -75,7 +80,7 @@ function preserveLayerLayout(
 ): VisualEdit[] | null {
   const descendants = new Set<HTMLElement>();
   for (const edit of edits) {
-    if (!edit.ops.some((op) => op.kind === 'set-style' && op.key === 'position')) continue;
+    if (!edit.ops.some((op) => op.kind === 'set-style' && op.key in LAYER_POSITION_STYLE)) continue;
     for (const node of edit.anchor.querySelectorAll<HTMLElement>('*')) {
       if (getComputedStyle(node).position !== 'absolute') continue;
       if (node.offsetParent && edit.anchor.contains(node.offsetParent)) continue;
@@ -150,6 +155,8 @@ export function useVisualEditor({
   bufferBatch,
 }: Options) {
   const [snapping, setSnapping] = useState(true);
+  const [thirds, setThirds] = useState(false);
+  const [grid, setGrid] = useState<GridSnap>({ enabled: false, size: DEFAULT_GRID_SIZE });
   const t = useLocale();
   const move = useCallback(
     (deltas: { x: number; y: number }[], coalesceKey?: string) => {
@@ -254,7 +261,8 @@ export function useVisualEditor({
                   canvas,
                 )
               : [];
-        if (patch.rotation !== undefined) ops.push(styleOp('rotate', `${patch.rotation}deg`));
+        if (patch.rotation !== undefined)
+          ops.push(styleOp(ROTATE_STYLE_KEY, `${patch.rotation}deg`));
         restoreTransform(snapshot);
         bufferBatch([{ ...snapshot.target, ops }]);
       }
@@ -334,6 +342,36 @@ export function useVisualEditor({
       else toast.error(t.inspector.layerLayoutHint);
     },
     [selection, committing, bufferBatch, slideId, t.inspector.layerLayoutHint],
+  );
+
+  const clearLayout = useCallback(
+    (scope: ClearLayoutScope) => {
+      if (committing) return;
+      const canvas = readCanvas();
+      if (!canvas || selection.some((target) => !canTransform(target, canvas))) return;
+      let keptPosition = false;
+      const edits = independentTargets(selection).flatMap((target) => {
+        let ops = clearLayoutOps(readInlineLayout(target.anchor), scope);
+        if (
+          ops.some((op) => op.kind === 'set-style' && op.key in LAYER_POSITION_STYLE) &&
+          anchorsPositionedDescendants(target.anchor)
+        ) {
+          keptPosition = true;
+          ops = ops.filter(
+            (op) =>
+              op.kind !== 'set-style' ||
+              !(
+                op.key in LAYER_POSITION_STYLE ||
+                (LAYER_INSET_KEYS as readonly string[]).includes(op.key)
+              ),
+          );
+        }
+        return ops.length ? [{ ...target, ops }] : [];
+      });
+      if (keptPosition) toast.info(t.inspector.clearLayoutKeptPosition);
+      bufferBatch(edits);
+    },
+    [selection, committing, bufferBatch, t.inspector.clearLayoutKeptPosition],
   );
 
   const selectParent = useCallback(() => {
@@ -417,13 +455,29 @@ export function useVisualEditor({
     () => ({
       snapping,
       setSnapping,
+      thirds,
+      setThirds,
+      grid,
+      setGrid,
       align,
       distribute,
       setFrame,
       arrange,
+      clearLayout,
       selectParent,
       selectAll,
     }),
-    [snapping, align, distribute, setFrame, arrange, selectParent, selectAll],
+    [
+      snapping,
+      thirds,
+      grid,
+      align,
+      distribute,
+      setFrame,
+      arrange,
+      clearLayout,
+      selectParent,
+      selectAll,
+    ],
   );
 }

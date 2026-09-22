@@ -5,7 +5,9 @@ import {
   type Rect,
   resizeRect,
   snapMove,
+  snapResize,
   solveResizeDimensions,
+  thirdLines,
   unionRects,
 } from './geometry.ts';
 
@@ -38,8 +40,8 @@ describe('snapMove', () => {
     ).toEqual({
       delta: { x: 80, y: 80 },
       guides: [
-        { axis: 'x', position: 100, start: 80, end: 290 },
-        { axis: 'y', position: 100, start: 80, end: 320 },
+        { axis: 'x', position: 100, start: 80, end: 290, kind: 'object' },
+        { axis: 'y', position: 100, start: 80, end: 320, kind: 'object' },
       ],
     });
   });
@@ -52,7 +54,9 @@ describe('snapMove', () => {
       4,
     );
     expect(result.delta).toEqual({ x: 80, y: 50 });
-    expect(result.guides).toEqual([{ axis: 'x', position: 90, start: 50, end: 220 }]);
+    expect(result.guides).toEqual([
+      { axis: 'x', position: 90, start: 50, end: 220, kind: 'object' },
+    ]);
   });
 
   it('breaks equal-distance ties consistently regardless of target order', () => {
@@ -300,5 +304,98 @@ describe('solveResizeDimensions', () => {
   it('keeps both local dimensions above the minimum when fitting a smaller box', () => {
     const result = solveResizeDimensions(size, rotatedBasis(45), { x: -1000, y: -1000 });
     expect(result).toEqual({ width: 16, height: 8 });
+  });
+});
+
+describe('canvas snapping', () => {
+  const canvas = { width: 1920, height: 1080 };
+  const rect = { x: 100, y: 100, width: 200, height: 100 };
+
+  it('places third lines at one and two thirds of each axis', () => {
+    expect(thirdLines(canvas, 'x')).toEqual([640, 1280]);
+    expect(thirdLines(canvas, 'y')).toEqual([360, 720]);
+  });
+
+  it('snaps an edge or centre onto a canvas third with a full-length guide', () => {
+    const result = snapMove(rect, { x: 436, y: 163 }, [], 6, { canvas, thirds: true });
+    expect(result.delta).toEqual({ x: 440, y: 160 });
+    expect(result.guides).toEqual([
+      { axis: 'x', position: 640, start: 0, end: 1080, kind: 'third' },
+      { axis: 'y', position: 360, start: 0, end: 1920, kind: 'third' },
+    ]);
+  });
+
+  it('ignores thirds unless enabled', () => {
+    expect(snapMove(rect, { x: 436, y: 0 }, [], 6, { canvas }).delta).toEqual({ x: 436, y: 0 });
+  });
+
+  it('prefers the nearer object anchor over a third', () => {
+    const result = snapMove(
+      rect,
+      { x: 436, y: 0 },
+      [{ x: 538, y: 600, width: 10, height: 10 }],
+      6,
+      {
+        canvas,
+        thirds: true,
+      },
+    );
+    expect(result.delta.x).toBe(438);
+    expect(result.guides[0]).toMatchObject({ axis: 'x', position: 538, kind: 'object' });
+  });
+
+  it('falls back to the grid on the leading edge when nothing else is in reach', () => {
+    const result = snapMove(rect, { x: 13, y: 21 }, [], 6, { canvas, thirds: true, grid: 8 });
+    expect(result.delta).toEqual({ x: 12, y: 20 });
+    expect(result.guides).toEqual([
+      { axis: 'x', position: 112, start: 0, end: 1080, kind: 'grid' },
+      { axis: 'y', position: 120, start: 0, end: 1920, kind: 'grid' },
+    ]);
+  });
+
+  it('lets a third win over the grid when both are in reach', () => {
+    const result = snapMove(rect, { x: 437, y: 0 }, [], 6, { canvas, thirds: true, grid: 8 });
+    expect(result.delta.x).toBe(440);
+    expect(result.guides[0].kind).toBe('third');
+  });
+
+  it('snaps only the moving edges of a resize', () => {
+    const result = snapResize({ x: 100, y: 100, width: 537, height: 257 }, 'se', [], 6, {
+      canvas,
+      thirds: true,
+    });
+    expect(result.frame).toEqual({ x: 100, y: 100, width: 540, height: 260 });
+    expect(result.guides.map((guide) => [guide.axis, guide.position])).toEqual([
+      ['x', 640],
+      ['y', 360],
+    ]);
+  });
+
+  it('keeps the opposite edge fixed when a west or north edge snaps', () => {
+    const result = snapResize({ x: 643, y: 100, width: 200, height: 100 }, 'w', [], 6, {
+      canvas,
+      thirds: true,
+    });
+    expect(result.frame).toEqual({ x: 640, y: 100, width: 203, height: 100 });
+  });
+
+  it('snaps a resize edge to an object edge and the grid', () => {
+    expect(
+      snapResize(
+        { x: 0, y: 0, width: 97, height: 45 },
+        'se',
+        [{ x: 100, y: 300, width: 5, height: 5 }],
+        6,
+        {
+          grid: 8,
+        },
+      ).frame,
+    ).toEqual({ x: 0, y: 0, width: 100, height: 48 });
+  });
+
+  it('refuses a snap that would collapse the box below the minimum size', () => {
+    expect(
+      snapResize({ x: 0, y: 0, width: 9, height: 20 }, 'e', [], 6, { grid: 20 }).frame.width,
+    ).toBe(9);
   });
 });

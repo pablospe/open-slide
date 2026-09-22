@@ -253,6 +253,18 @@ export type Locale = {
     sendToBack: string;
     snappingLabel: string;
     smartGuides: string;
+    layoutLabel: string;
+    clearLayout: string;
+    clearLayoutTransform: string;
+    clearLayoutAll: string;
+    clearLayoutHint: string;
+    clearLayoutNothing: string;
+    clearLayoutAltOnly: string;
+    clearLayoutOptions: string;
+    clearLayoutKeptPosition: string;
+    snapThirds: string;
+    snapGrid: string;
+    gridSize: string;
     selectParent: string;
     selectAll: string;
     visualEditorHint: string;
