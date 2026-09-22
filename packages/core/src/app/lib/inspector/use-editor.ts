@@ -12,7 +12,10 @@ export type EditOp =
       prevText?: string;
     }
   | { kind: 'set-attr-asset'; attr: string; assetPath: string; previewUrl: string }
-  | { kind: 'replace-placeholder-with-image'; assetPath: string };
+  | { kind: 'replace-placeholder-with-image'; assetPath: string }
+  | { kind: 'remove-element'; instanceCount?: number }
+  | { kind: 'duplicate-element'; instanceCount?: number }
+  | { kind: 'move-element'; direction: 'earlier' | 'later'; instanceCount?: number };
 
 export type Edit = { line: number; column: number; ops: EditOp[]; dependsOn?: number };
 
@@ -24,6 +27,21 @@ export class NoOpEditError extends Error {
       'Edit completed but the source file did not change — the target JSX may already match, or the target element may not be directly editable here.',
     );
     this.name = 'NoOpEditError';
+  }
+}
+
+export type StructureEditResult = {
+  changed: boolean;
+  location?: { line: number; column: number };
+};
+
+export class StructureEditError extends Error {
+  constructor(
+    message: string,
+    readonly code?: string,
+  ) {
+    super(message);
+    this.name = 'StructureEditError';
   }
 }
 
@@ -69,5 +87,25 @@ export function useEditor(slideId: string) {
     [slideId],
   );
 
-  return { applyEdit, applyEdits };
+  // Structural edits rewrite sibling ranges, so they are never buffered or
+  // batched: one op, one request, one file write.
+  const applyStructureEdit = useCallback(
+    async (line: number, column: number, op: EditOp): Promise<StructureEditResult> => {
+      const res = await fetch('/__edit', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ slideId, line, column, ops: [op] }),
+      });
+      const body = (await res.json().catch(() => ({}))) as Partial<StructureEditResult> & {
+        error?: string;
+        code?: string;
+      };
+      if (!res.ok)
+        throw new StructureEditError(body.error ?? `POST /__edit → ${res.status}`, body.code);
+      return { changed: body.changed !== false, location: body.location };
+    },
+    [slideId],
+  );
+
+  return { applyEdit, applyEdits, applyStructureEdit };
 }

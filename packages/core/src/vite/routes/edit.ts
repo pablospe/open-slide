@@ -49,10 +49,19 @@ export function registerEditRoutes(server: ViteDevServer, ctx: ApiContext): void
         if (source === null) return json(res, 404, { error: 'slide not found' });
 
         const result = applyEdit(source, body.line, body.column ?? 0, body.ops);
-        if (!result.ok) return json(res, result.status, { error: result.error });
+        if (!result.ok) {
+          return json(res, result.status, {
+            error: result.error,
+            ...(result.code ? { code: result.code } : {}),
+          });
+        }
         const changed = result.source !== source;
         if (changed) await fs.writeFile(file, result.source, 'utf8');
-        return json(res, 200, { ok: true, changed });
+        return json(res, 200, {
+          ok: true,
+          changed,
+          ...(result.location ? { location: result.location } : {}),
+        });
       }
 
       if (url.pathname === '/revert-asset') {

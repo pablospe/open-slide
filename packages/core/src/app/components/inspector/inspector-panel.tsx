@@ -47,7 +47,7 @@ import { format, useLocale } from '@/lib/use-locale';
 import { cn, round2 } from '@/lib/utils';
 import type { Locale } from '../../../locale/types';
 import { useDesignPanelState } from '../style-panel/design-provider';
-import { ArrangePanel } from './arrange-panel';
+import { ArrangePanel, StructureSection } from './arrange-panel';
 import { AssetPickerDialog } from './asset-picker-dialog';
 import { type SelectedTarget, useInspector } from './inspector-provider';
 
@@ -440,6 +440,7 @@ export function InspectorPanel({
             </TabsContent>
             <TabsContent value="arrange">
               <ArrangePanel />
+              <StructureSection />
             </TabsContent>
             {!multiple && (
               <div className="mt-auto">

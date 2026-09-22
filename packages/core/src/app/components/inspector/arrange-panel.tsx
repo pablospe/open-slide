@@ -10,10 +10,14 @@ import {
   ArrowDown,
   ArrowUp,
   BringToFront,
+  Copy,
   CornerLeftUp,
   type LucideIcon,
   Magnet,
+  MoveDown,
+  MoveUp,
   SendToBack,
+  Trash2,
 } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { Field, Section } from '@/components/panel/panel-fields';
@@ -22,6 +26,7 @@ import { Input } from '@/components/ui/input';
 import { Toggle } from '@/components/ui/toggle';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { STRUCTURE_ACTIONS, type StructureActionId } from '@/lib/inspector/structure-actions';
 import { canTransform, readCanvas, readFrame, readRotation } from '@/lib/inspector/visual-dom';
 import { format, useLocale } from '@/lib/use-locale';
 import { round2 } from '@/lib/utils';
@@ -266,6 +271,44 @@ export function ArrangePanel() {
           </Button>
         </div>
         <p className="text-[10px] leading-relaxed text-muted-foreground">{t.visualEditorHint}</p>
+      </TooltipProvider>
+    </Section>
+  );
+}
+
+const STRUCTURE_ICONS: Record<StructureActionId, LucideIcon> = {
+  moveEarlier: MoveUp,
+  moveLater: MoveDown,
+  duplicate: Copy,
+  delete: Trash2,
+};
+
+export function StructureSection() {
+  const { structure, committing } = useInspector();
+  const { inspector: t } = useLocale();
+  const disabled = committing || structure.busy || !!structure.blockedReason;
+
+  return (
+    <Section title={t.structureSection}>
+      <TooltipProvider delay={350}>
+        {structure.blockedReason && (
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            {structure.blockedReason}
+          </p>
+        )}
+        <fieldset className="grid grid-cols-4 gap-1" data-structure-actions>
+          <legend className="sr-only">{t.structureSection}</legend>
+          {STRUCTURE_ACTIONS.map((action) => (
+            <ArrangeButton
+              key={action.id}
+              label={t[action.label]}
+              icon={STRUCTURE_ICONS[action.id]}
+              disabled={disabled}
+              onClick={() => void structure.run(action.id)}
+            />
+          ))}
+        </fieldset>
+        <p className="text-[10px] leading-relaxed text-muted-foreground">{t.structureHint}</p>
       </TooltipProvider>
     </Section>
   );
