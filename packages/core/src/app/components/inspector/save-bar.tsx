@@ -45,7 +45,7 @@ export function SaveBar() {
         event.stopImmediatePropagation();
         if (event.shiftKey || key === 'y') history.redo();
         else history.undo();
-      } else if (key === 's') {
+      } else if (key === 's' && !event.shiftKey) {
         event.preventDefault();
         event.stopImmediatePropagation();
         if (

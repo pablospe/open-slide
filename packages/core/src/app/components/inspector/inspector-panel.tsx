@@ -52,6 +52,7 @@ import { ArrangePanel, StructureSection } from './arrange-panel';
 import { AssetPickerDialog } from './asset-picker-dialog';
 import { InsertSection } from './insert-panel';
 import { readEditableText, type SelectedTarget, useInspector } from './inspector-provider';
+import { RevealSection } from './reveal-section';
 import { InspectorEmptyState, SourceLocationBar } from './source-location-bar';
 
 type ElementSnapshot = {
@@ -459,6 +460,7 @@ export function InspectorPanel({
             <TabsContent value="arrange">
               <ArrangePanel />
               <StructureSection />
+              <RevealSection />
               <Separator />
               <InsertSection design={design} />
             </TabsContent>

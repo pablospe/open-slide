@@ -37,6 +37,8 @@ export type StructureRefusal =
   | 'page-not-found'
   | 'page-root';
 
+export type GuardRefusal = 'root' | 'expression' | 'conditional' | 'map' | 'shared' | 'comment';
+
 export type SourceLocation = { line: number; column: number };
 
 export type StructurePlan =
@@ -84,7 +86,7 @@ export function isBlankText(node: t.Node): boolean {
   return t.isJSXText(node) && node.value.trim() === '';
 }
 
-function isCommentContainer(node: t.Node): boolean {
+export function isCommentContainer(node: t.Node): boolean {
   return t.isJSXExpressionContainer(node) && t.isJSXEmptyExpression(node.expression);
 }
 
@@ -109,7 +111,10 @@ export function offsetToLocation(source: string, offset: number): SourceLocation
 // The bytes an element owns on its own line(s): leading indentation through
 // the newline after it. `null` when the element shares a line with other
 // content (inline JSX), where only its own bytes are safe to touch.
-export function ownedLines(source: string, node: t.Node): { from: number; to: number } | null {
+export function ownedLines(
+  source: string,
+  node: t.Node | { start: number; end: number },
+): { from: number; to: number } | null {
   const start = node.start ?? 0;
   const end = node.end ?? 0;
   const lineStart = source.lastIndexOf('\n', start - 1) + 1;
@@ -199,7 +204,7 @@ export function siblingParent(
   ast: t.File,
   element: t.JSXElement,
   instanceCount = 1,
-): t.JSXElement | t.JSXFragment | StructureRefusal {
+): t.JSXElement | t.JSXFragment | Exclude<GuardRefusal, 'comment'> {
   const parent = findParent(ast, element);
   if (!parent || !(t.isJSXElement(parent) || t.isJSXFragment(parent))) {
     if (t.isLogicalExpression(parent) || t.isConditionalExpression(parent)) return 'conditional';
@@ -212,6 +217,37 @@ export function siblingParent(
   return parent;
 }
 
+// Checks shared by every op that rewrites an element's own bytes: the element
+// must be a plain JSX child, rendered once, and free of inspector comments.
+export function guardElement(
+  ast: t.File,
+  source: string,
+  element: t.JSXElement,
+  instanceCount = 1,
+): t.JSXElement | t.JSXFragment | GuardRefusal {
+  const parent = siblingParent(ast, element, instanceCount);
+  if (typeof parent === 'string') return parent;
+  if (source.slice(element.start ?? 0, element.end ?? 0).includes('@slide-comment'))
+    return 'comment';
+  return parent;
+}
+
+// Swaps two sibling elements' bytes; everything between them stays in place.
+export function swapSplices(source: string, first: t.Node, second: t.Node): Splice[] {
+  return [
+    {
+      from: first.start ?? 0,
+      to: first.end ?? 0,
+      text: source.slice(second.start ?? 0, second.end ?? 0),
+    },
+    {
+      from: second.start ?? 0,
+      to: second.end ?? 0,
+      text: source.slice(first.start ?? 0, first.end ?? 0),
+    },
+  ];
+}
+
 export function planStructureEdit(
   ast: t.File,
   source: string,
@@ -222,10 +258,8 @@ export function planStructureEdit(
   if (op.kind === 'insert-snippet') return planInsertSnippet(ast, source, line, column, op);
   const element = findJsxByStart(ast, line, column);
   if (!element) return refuse('not-found');
-  const parent = siblingParent(ast, element, op.instanceCount);
+  const parent = guardElement(ast, source, element, op.instanceCount);
   if (typeof parent === 'string') return refuse(parent);
-  if (source.slice(element.start ?? 0, element.end ?? 0).includes('@slide-comment'))
-    return refuse('comment');
 
   if (op.kind === 'remove-element') return { ok: true, splices: [removeSplice(source, element)] };
 
@@ -240,10 +274,7 @@ export function planStructureEdit(
   const [first, second] = op.direction === 'earlier' ? [sibling, element] : [element, sibling];
   const firstText = source.slice(first.start ?? 0, first.end ?? 0);
   const secondText = source.slice(second.start ?? 0, second.end ?? 0);
-  const splices: Splice[] = [
-    { from: first.start ?? 0, to: first.end ?? 0, text: secondText },
-    { from: second.start ?? 0, to: second.end ?? 0, text: firstText },
-  ];
+  const splices = swapSplices(source, first, second);
   const movedOffset =
     op.direction === 'earlier'
       ? (first.start ?? 0)

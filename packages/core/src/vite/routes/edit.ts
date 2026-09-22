@@ -1,8 +1,10 @@
 import fs from 'node:fs/promises';
 import type { ViteDevServer } from 'vite';
+import { parseSource } from '../../editing/babel-walk.ts';
 import { applyEditBatch, type BatchEdit } from '../../editing/batch-edit.ts';
 import { applyEdit, type EditOp } from '../../editing/edit-ops.ts';
 import { applyRevertAsset } from '../../editing/revert-asset.ts';
+import { stepInfo } from '../../editing/steps-ops.ts';
 import { validateMutationRequest } from '../../http/request-guard.ts';
 import {
   type ApiContext,
@@ -15,6 +17,7 @@ import {
 // POST /__edit                applyEdit({ slideId, line, column, ops })
 // POST /__edit/revert-asset   applyRevertAsset({ slideId, assetPath })
 // POST /__edit/batch          applyEdit × N — single FS write per request
+// POST /__edit/step-info      stepInfo({ slideId, line, column, instanceCount }), read-only
 
 type EditBody = {
   slideId?: string;
@@ -109,6 +112,19 @@ export function registerEditRoutes(server: ViteDevServer, ctx: ApiContext): void
         const changed = updated !== source;
         if (changed) await fs.writeFile(file, updated, 'utf8');
         return json(res, 200, { ok: true, changed, results });
+      }
+
+      if (url.pathname === '/step-info') {
+        const body = (await readBody(req)) as EditBody & { instanceCount?: number };
+        const file = resolveSlideEntryPath(ctx, body.slideId ?? '');
+        if (!file) return json(res, 400, { error: 'invalid slideId' });
+        if (!body.line || body.line < 1) return json(res, 400, { error: 'invalid line' });
+        const source = await readSlideSource(file);
+        if (source === null) return json(res, 404, { error: 'slide not found' });
+        const ast = parseSource(source);
+        if (!ast) return json(res, 422, { error: 'could not parse source' });
+        const instanceCount = Number.isInteger(body.instanceCount) ? body.instanceCount : 1;
+        return json(res, 200, stepInfo(ast, source, body.line, body.column ?? 0, instanceCount));
       }
 
       return next();

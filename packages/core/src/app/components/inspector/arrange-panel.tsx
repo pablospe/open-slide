@@ -364,7 +364,7 @@ function ActionButton({
   );
 }
 
-function ArrangeButton({
+export function ArrangeButton({
   label,
   icon: Icon,
   onClick,

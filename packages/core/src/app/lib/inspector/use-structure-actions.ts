@@ -2,6 +2,7 @@ import { type RefObject, useCallback, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import type { SelectedTarget } from '@/components/inspector/inspector-provider';
 import { useLocale } from '@/lib/use-locale';
+import type { Locale } from '../../../locale/types';
 import { findSlideSource } from './fiber';
 import { refusalMessage, STRUCTURE_OPS, type StructureActionId } from './structure-actions';
 import { StructureEditError, useEditor } from './use-editor';
@@ -70,6 +71,34 @@ export function waitForSlideUpdate(slideId: string): { ready: Promise<void>; can
   return { ready, cancel };
 }
 
+export function sourceEditBlockedReason(
+  t: Locale['inspector'],
+  selection: SelectedTarget[],
+  pendingCount: number,
+): string | null {
+  if (selection.length !== 1) return t.structureSingleOnly;
+  if (pendingCount > 0) return t.structurePendingEdits;
+  const target = selection[0];
+  if (target.anchor.dataset.slideLoc !== `${target.line}:${target.column}`)
+    return t.structureExternal;
+  return null;
+}
+
+export function instanceCountOf(target: SelectedTarget): number {
+  const loc = `${target.line}:${target.column}`;
+  return inspectorRoot()?.querySelectorAll(`[data-slide-loc="${loc}"]`).length ?? 1;
+}
+
+export function selectAtLocation(
+  location: { line: number; column: number },
+  slideId: string,
+): SelectedTarget | null {
+  const anchor = inspectorRoot()?.querySelector<HTMLElement>(
+    `[data-slide-loc="${location.line}:${location.column}"]`,
+  );
+  return anchor ? findSlideSource(anchor, slideId, { hostOnly: true }) : null;
+}
+
 export function useStructureActions({
   committing,
   slideId,
@@ -87,9 +116,7 @@ export function useStructureActions({
       if (lock.current || committing) return;
       const target = selection[0];
       if (!target) return;
-      const loc = `${target.line}:${target.column}`;
-      const instanceCount =
-        inspectorRoot()?.querySelectorAll(`[data-slide-loc="${loc}"]`).length ?? 1;
+      const instanceCount = instanceCountOf(target);
       lock.current = true;
       setBusy(true);
       const update = waitForSlideUpdate(slideId);
@@ -107,10 +134,7 @@ export function useStructureActions({
         }
         if (changed) await update.ready;
         else update.cancel();
-        const anchor = inspectorRoot()?.querySelector<HTMLElement>(
-          `[data-slide-loc="${location.line}:${location.column}"]`,
-        );
-        const hit = anchor ? findSlideSource(anchor, slideId, { hostOnly: true }) : null;
+        const hit = selectAtLocation(location, slideId);
         setSelection(hit ? [hit] : []);
       } catch (err) {
         update.cancel();

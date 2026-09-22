@@ -2,11 +2,13 @@ import { parseSource } from './babel-walk.ts';
 import {
   applySplices,
   type EditOp,
+  type EditRefusal,
   findElementForEdit,
+  isStandaloneOp,
   planEdit,
   type Splice,
 } from './edit-ops.ts';
-import { isStructureOp, type SourceLocation, type StructureRefusal } from './structure-ops.ts';
+import type { SourceLocation } from './structure-ops.ts';
 
 export type BatchEdit = {
   line?: number;
@@ -17,7 +19,7 @@ export type BatchEdit = {
 export type BatchEditResult = {
   ok: boolean;
   error?: string;
-  code?: StructureRefusal;
+  code?: EditRefusal;
   location?: SourceLocation;
 };
 
@@ -51,7 +53,9 @@ export function applyEditBatch(
   // cannot be rebased reliably; they are applied alone, never buffered.
   if (
     edits.length > 1 &&
-    edits.some((edit) => Array.isArray(edit?.ops) && edit.ops.some((op) => op && isStructureOp(op)))
+    edits.some(
+      (edit) => Array.isArray(edit?.ops) && edit.ops.some((op) => op && isStandaloneOp(op)),
+    )
   ) {
     const error = 'a structural edit must be the only edit in its batch';
     return { source, results: edits.map(() => ({ ok: false, error })) };

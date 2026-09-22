@@ -23,6 +23,7 @@ import {
 import { type SlideComment, useComments } from '@/lib/inspector/use-comments';
 import { type Edit, type EditOp, useEditor } from '@/lib/inspector/use-editor';
 import { useInsertSnippet } from '@/lib/inspector/use-insert-snippet';
+import { useStepActions } from '@/lib/inspector/use-step-actions';
 import { useStructureActions } from '@/lib/inspector/use-structure-actions';
 import { useVisualEditor, type VisualEdit } from '@/lib/inspector/use-visual-editor';
 import { isShortcutControlTarget, isTypingTarget } from '@/lib/keys';
@@ -335,6 +336,7 @@ type InspectorCtx = {
   bufferBatch: (edits: VisualEdit[], coalesceKey?: string) => void;
   structure: ReturnType<typeof useStructureActions>;
   insert: ReturnType<typeof useInsertSnippet>;
+  steps: ReturnType<typeof useStepActions>;
   visual: ReturnType<typeof useVisualEditor>;
   selected: SelectedTarget | null;
   setSelected: (s: SelectedTarget | null) => void;
@@ -816,6 +818,18 @@ export function InspectorProvider({
     onApplied: history.clear,
   });
 
+  const steps = useStepActions({
+    lock: sourceEditLock,
+    active,
+    inlineEditing: !!inlineEdit,
+    committing,
+    pendingCount,
+    slideId,
+    selection,
+    setSelection,
+    onApplied: history.clear,
+  });
+
   const pendingStyleValue = useCallback(
     (line: number, column: number, key: string) =>
       pendingRef.current.get(`${line}:${column}`)?.styleOps.get(key)?.value,
@@ -1242,6 +1256,7 @@ export function InspectorProvider({
       visual,
       structure,
       insert,
+      steps,
       selected,
       setSelected,
       inlineEdit,
@@ -1281,6 +1296,7 @@ export function InspectorProvider({
       visual,
       structure,
       insert,
+      steps,
       selected,
       inlineEdit,
       inlineSelection,
