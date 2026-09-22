@@ -1,5 +1,5 @@
 import * as t from '@babel/types';
-import { walkAll } from './babel-walk.ts';
+import { walkAll, walkJsx } from './babel-walk.ts';
 import { findJsxByStart, planAssetImport, type Splice } from './edit-ops.ts';
 import { findSnippet, renderSnippetTsx } from './snippets.ts';
 import {
@@ -30,10 +30,29 @@ function lineIndent(source: string, offset: number): string {
   return /^[ \t]*/.exec(source.slice(lineStart))?.[0] ?? '';
 }
 
-function indentUnit(source: string): string {
-  if (/^\t/m.test(source)) return '\t';
-  const sizes = [...source.matchAll(/^( +)\S/gm)].map((m) => m[1].length);
-  const smallest = Math.min(...sizes.filter((n) => n > 0));
+function startsLine(source: string, node: t.Node): boolean {
+  const start = node.start ?? 0;
+  return /^[ \t]*$/.test(source.slice(source.lastIndexOf('\n', start - 1) + 1, start));
+}
+
+// Measured between JSX parents and children that each start their own line,
+// so comments, strings and template literals never skew it.
+function indentUnit(ast: t.File, source: string): string {
+  const steps: string[] = [];
+  walkJsx(ast, (node) => {
+    if ((!t.isJSXElement(node) && !t.isJSXFragment(node)) || !startsLine(source, node)) return;
+    const parentIndent = lineIndent(source, node.start ?? 0);
+    for (const child of node.children) {
+      if (!(t.isJSXElement(child) || t.isJSXFragment(child)) || !startsLine(source, child))
+        continue;
+      const childIndent = lineIndent(source, child.start ?? 0);
+      if (childIndent.length > parentIndent.length && childIndent.startsWith(parentIndent)) {
+        steps.push(childIndent.slice(parentIndent.length));
+      }
+    }
+  });
+  if (steps.some((step) => step.includes('\t'))) return '\t';
+  const smallest = Math.min(...steps.map((step) => step.length));
   return Number.isFinite(smallest) && smallest <= 8 ? ' '.repeat(smallest) : '  ';
 }
 
@@ -121,7 +140,7 @@ export function findPageRoot(ast: t.File, pageIndex: number): JsxParent | Struct
 function isAssetPath(value: unknown): value is string {
   return (
     typeof value === 'string' &&
-    /^(\.\/assets\/|@assets\/)[^'"\\\n\r]+$/.test(value) &&
+    /^(\.\/assets\/|@assets\/)[^\\\n\r]+$/.test(value) &&
     !value.split('/').includes('..')
   );
 }
@@ -231,7 +250,7 @@ export function planInsertSnippet(
   if (snippet.needsAsset && !isAssetPath(op.assetPath)) return refuse('asset-required');
 
   const imported = snippet.needsAsset ? planAssetImport(ast, op.assetPath as string) : null;
-  const unit = indentUnit(source);
+  const unit = indentUnit(ast, source);
   const render = (indent: string) =>
     renderSnippetTsx(snippet, { indent, unit, assetIdentifier: imported?.identifier });
 
@@ -240,8 +259,15 @@ export function planInsertSnippet(
     const element = findJsxByStart(ast, line, column);
     if (!element) return refuse('not-found');
     const parent = siblingParent(ast, element, op.instanceCount);
-    if (typeof parent === 'string') return refuse(parent);
-    insertion = insertAfter(source, element, render);
+    // A selected page root has no siblings; the block goes inside it instead.
+    if (
+      parent === 'root' &&
+      op.pageIndex !== undefined &&
+      findPageRoot(ast, op.pageIndex) === element
+    )
+      insertion = insertLastChild(source, element, unit, render);
+    else if (typeof parent === 'string') return refuse(parent);
+    else insertion = insertAfter(source, element, render);
   } else if (op.position === 'end-of-page') {
     const root = findPageRoot(ast, op.pageIndex ?? -1);
     insertion = typeof root === 'string' ? root : insertLastChild(source, root, unit, render);

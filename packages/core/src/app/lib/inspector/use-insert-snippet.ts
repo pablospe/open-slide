@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { type RefObject, useCallback, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import type { SelectedTarget } from '@/components/inspector/inspector-provider';
 import { useLocale } from '@/lib/use-locale';
@@ -9,6 +9,9 @@ import { StructureEditError, useEditor } from './use-editor';
 import { inspectorRoot, waitForSlideUpdate } from './use-structure-actions';
 
 type Options = {
+  // Shared by every hook that rewrites the slide by source location, so one
+  // op never targets a loc another in-flight op is about to shift.
+  lock: RefObject<boolean>;
   committing: boolean;
   pendingCount: number;
   slideId: string;
@@ -38,17 +41,17 @@ export function useInsertSnippet({
   selection,
   setSelection,
   onApplied,
+  lock,
 }: Options) {
   const { inspector: t } = useLocale();
   const { applyStructureEdit } = useEditor(slideId);
   const [busy, setBusy] = useState(false);
-  const busyRef = useRef(false);
   const placement = insertPlacement(selection);
   const blockedReason = pendingCount > 0 ? t.structurePendingEdits : null;
 
   const insert = useCallback(
     async (snippetId: SnippetId, assetPath?: string) => {
-      if (busyRef.current || committing) return;
+      if (lock.current || committing) return;
       if (blockedReason) {
         toast.error(blockedReason);
         return;
@@ -58,7 +61,7 @@ export function useInsertSnippet({
         ? (inspectorRoot()?.querySelectorAll(`[data-slide-loc="${target.line}:${target.column}"]`)
             .length ?? 1)
         : 1;
-      busyRef.current = true;
+      lock.current = true;
       setBusy(true);
       const update = waitForSlideUpdate(slideId);
       try {
@@ -93,7 +96,7 @@ export function useInsertSnippet({
           (err instanceof Error ? err.message : String(err));
         toast.error(`${t.insertFailed} ${reason}`);
       } finally {
-        busyRef.current = false;
+        lock.current = false;
         setBusy(false);
       }
     },
@@ -101,6 +104,7 @@ export function useInsertSnippet({
       applyStructureEdit,
       blockedReason,
       committing,
+      lock,
       onApplied,
       pageIndex,
       placement,

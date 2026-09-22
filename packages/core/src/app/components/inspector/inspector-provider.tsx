@@ -796,7 +796,9 @@ export function InspectorProvider({
     bufferBatch,
   });
 
+  const sourceEditLock = useRef(false);
   const structure = useStructureActions({
+    lock: sourceEditLock,
     active,
     inlineEditing: !!inlineEdit,
     committing,
@@ -808,6 +810,7 @@ export function InspectorProvider({
   });
 
   const insert = useInsertSnippet({
+    lock: sourceEditLock,
     committing,
     pendingCount,
     slideId,

@@ -392,9 +392,9 @@ const STRUCTURE_ICONS: Record<StructureActionId, LucideIcon> = {
 };
 
 export function StructureSection() {
-  const { structure, committing } = useInspector();
+  const { structure, insert, committing } = useInspector();
   const { inspector: t } = useLocale();
-  const disabled = committing || structure.busy || !!structure.blockedReason;
+  const disabled = committing || structure.busy || insert.busy || !!structure.blockedReason;
 
   return (
     <Section title={t.structureSection}>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type RefObject, useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import type { SelectedTarget } from '@/components/inspector/inspector-provider';
 import { isTypingTarget } from '@/lib/keys';
@@ -13,6 +13,9 @@ import {
 import { StructureEditError, useEditor } from './use-editor';
 
 type Options = {
+  // Shared by every hook that rewrites the slide by source location, so one
+  // op never targets a loc another in-flight op is about to shift.
+  lock: RefObject<boolean>;
   active: boolean;
   inlineEditing: boolean;
   committing: boolean;
@@ -85,11 +88,11 @@ export function useStructureActions({
   selection,
   setSelection,
   onApplied,
+  lock,
 }: Options) {
   const { inspector: t } = useLocale();
   const { applyStructureEdit } = useEditor(slideId);
   const [busy, setBusy] = useState(false);
-  const busyRef = useRef(false);
 
   const blockedReason = useMemo(() => {
     if (selection.length !== 1) return t.structureSingleOnly;
@@ -102,7 +105,7 @@ export function useStructureActions({
 
   const run = useCallback(
     async (id: StructureActionId) => {
-      if (busyRef.current || committing) return;
+      if (lock.current || committing) return;
       if (blockedReason) {
         toast.error(blockedReason);
         return;
@@ -113,7 +116,7 @@ export function useStructureActions({
       const loc = `${target.line}:${target.column}`;
       const instanceCount =
         inspectorRoot()?.querySelectorAll(`[data-slide-loc="${loc}"]`).length ?? 1;
-      busyRef.current = true;
+      lock.current = true;
       setBusy(true);
       const update = waitForSlideUpdate(slideId);
       try {
@@ -142,11 +145,21 @@ export function useStructureActions({
           (err instanceof Error ? err.message : String(err));
         toast.error(`${t.structureFailed} ${reason}`);
       } finally {
-        busyRef.current = false;
+        lock.current = false;
         setBusy(false);
       }
     },
-    [applyStructureEdit, blockedReason, committing, onApplied, selection, setSelection, slideId, t],
+    [
+      applyStructureEdit,
+      blockedReason,
+      committing,
+      lock,
+      onApplied,
+      selection,
+      setSelection,
+      slideId,
+      t,
+    ],
   );
 
   useEffect(() => {

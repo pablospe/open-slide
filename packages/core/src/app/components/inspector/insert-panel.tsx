@@ -83,11 +83,11 @@ function useTileScale() {
 }
 
 export function InsertSection({ design }: { design?: DesignSystem }) {
-  const { insert, committing, slideId } = useInspector();
+  const { insert, structure, committing, slideId } = useInspector();
   const { inspector: t } = useLocale();
   const [pickingImage, setPickingImage] = useState(false);
   const { ref, scale } = useTileScale();
-  const disabled = committing || insert.busy || !!insert.blockedReason;
+  const disabled = committing || insert.busy || structure.busy || !!insert.blockedReason;
   const vars = designToCssVars(design ?? defaultDesign) as CSSProperties;
 
   return (

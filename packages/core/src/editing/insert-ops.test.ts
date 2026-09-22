@@ -145,6 +145,33 @@ describe('insert-snippet after the selection', () => {
 });
 
 describe('insert-snippet at the end of the page', () => {
+  it('puts the block inside a selected page root', () => {
+    const r = ok(insertAfter(deck, '<div style', { pageIndex: 0 }));
+    expect(r.source).toBe(ok(insertAtEnd(deck, { pageIndex: 0 })).source);
+    expect(r.location).toEqual({ line: 7, column: 4 });
+  });
+
+  it('measures indentation from JSX, not comments or strings', () => {
+    const source = lines(
+      '/**',
+      ' * A doc comment.',
+      ' */',
+      'const code = `',
+      '\tindented sample',
+      '`;',
+      'const A = () => (',
+      '    <div>',
+      '        <p>Body</p>',
+      '    </div>',
+      ');',
+      'export default [A];',
+      '',
+    );
+    const r = ok(insertAfter(source, '<p>', { snippetId: 'bullet-list' }));
+    expect(r.source).toContain('        <ul\n            style={{\n                margin: 0,');
+    expect(r.source).toContain('            <li>First point</li>\n');
+  });
+
   it('appends after the last child of a parenthesised root', () => {
     const r = ok(insertAtEnd(deck, { pageIndex: 0 }));
     expect(r.source).toBe(
@@ -330,7 +357,18 @@ describe('insert-snippet image', () => {
     expect(tagAt(r.source, r.location)).toBe('img');
   });
 
-  it.each([undefined, '', '/etc/passwd', './assets/../index.tsx', "./assets/a'b.png"])(
+  it('escapes quotes in the asset import', () => {
+    const r = ok(
+      insertAtEnd(source, {
+        pageIndex: 0,
+        snippetId: 'image',
+        assetPath: "./assets/Pablo's photo.png",
+      }),
+    );
+    expect(r.source).toContain("import pabloSPhoto from './assets/Pablo\\'s photo.png';");
+  });
+
+  it.each([undefined, '', '/etc/passwd', './assets/../index.tsx', './assets/a\\b.png'])(
     'refuses asset path %s',
     (assetPath) => {
       const r = refused(insertAtEnd(source, { pageIndex: 0, snippetId: 'image', assetPath }));
@@ -397,7 +435,19 @@ describe('insert-snippet refusals', () => {
       ),
       '<p>',
     ],
-    ['root', deck, '<div style'],
+    [
+      'root',
+      lines(
+        'const Card = () => (',
+        '  <div>',
+        '    <p>x</p>',
+        '  </div>',
+        ');',
+        'const A = () => <Card />;',
+        'export default [A];',
+      ),
+      '<div>',
+    ],
   ])('refuses %s after-selection inserts and leaves the file alone', (code, source, needle) => {
     const r = refused(insertAfter(source, needle, {}));
     expect(r.code).toBe(code);
