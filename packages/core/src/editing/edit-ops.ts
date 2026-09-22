@@ -558,6 +558,10 @@ function compactText(value: string): string {
   return value.replace(/\s+/g, '');
 }
 
+function collapseText(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
 function textMatchesExpected(current: string, expected: string): boolean {
   return current === expected || compactText(current) === compactText(expected);
 }
@@ -1011,8 +1015,10 @@ function elementTextCandidateMatches(
   element: t.JSXElement,
   prevText: string,
 ): boolean {
-  const norm = prevText.trim();
-  return collectElementTextCandidates(ast, element).some((candidate) => candidate.current === norm);
+  const normalized = collapseText(prevText);
+  return collectElementTextCandidates(ast, element).some(
+    (candidate) => collapseText(candidate.current) === normalized,
+  );
 }
 
 function buildTextSplice(
@@ -1031,10 +1037,8 @@ function buildTextSplice(
   if (prevText === undefined) {
     return { error: 'element has multiple text candidates; missing prevText' };
   }
-  // Trim: JSX collapses surrounding whitespace at render time, so the
-  // DOM `prevText` won't have leading/trailing space the source might.
-  const norm = prevText.trim();
-  const matches = candidates.filter((c) => c.current === norm);
+  const normalized = collapseText(prevText);
+  const matches = candidates.filter((candidate) => collapseText(candidate.current) === normalized);
   if (matches.length === 0) {
     return { error: 'no text candidate matches the current value' };
   }
