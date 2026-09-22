@@ -7,7 +7,9 @@ import {
   type Rect,
   type ResizeHandle,
   resizeRect,
+  type SnapOptions,
   snapMove,
+  snapResize,
   unionRects,
 } from '@/lib/inspector/geometry';
 import {
@@ -24,6 +26,7 @@ import {
   independentTargets,
   moveOps,
   previewOps,
+  ROTATE_STYLE_KEY,
   readCanvas,
   readFrame,
   restoreTransform,
@@ -34,6 +37,7 @@ import {
 } from '@/lib/inspector/visual-dom';
 import { isTypingTarget } from '@/lib/keys';
 import { format, useLocale } from '@/lib/use-locale';
+import { cn } from '@/lib/utils';
 import { type SelectedTarget, useInspector } from './inspector-provider';
 
 type Gesture = {
@@ -333,17 +337,26 @@ export function InspectOverlay() {
       document.documentElement.style.cursor = cursor;
       document.documentElement.style.setProperty('--osd-gesture-cursor', cursor);
       let nextGuides: Guide[] = [];
+      const snap: SnapOptions | null =
+        !event.altKey && (visual.snapping || visual.thirds || visual.grid.enabled)
+          ? {
+              canvas: gesture.canvas,
+              thirds: visual.thirds,
+              grid: visual.grid.enabled ? visual.grid.size : null,
+            }
+          : null;
       if (gesture.mode === 'move') {
         const horizontal = event.shiftKey && Math.abs(delta.x) >= Math.abs(delta.y);
         const vertical = event.shiftKey && !horizontal;
         if (horizontal) delta.y = 0;
         if (vertical) delta.x = 0;
-        if (visual.snapping && !event.altKey) {
+        if (snap) {
           const snapped = snapMove(
             gesture.bounds,
             delta,
-            gesture.candidates,
+            visual.snapping ? gesture.candidates : [],
             6 / gesture.canvas.scale,
+            snap,
           );
           delta = { x: vertical ? 0 : snapped.delta.x, y: horizontal ? 0 : snapped.delta.y };
           nextGuides = snapped.guides.filter(
@@ -364,10 +377,24 @@ export function InspectOverlay() {
         const snapshot = gesture.snapshots[0];
         let rotation = snapshot.rotation + ((angle - startAngle) * 180) / Math.PI;
         if (event.shiftKey) rotation = Math.round(rotation / 15) * 15;
-        gesture.edits = [{ ...snapshot.target, ops: [styleOp('rotate', `${round(rotation)}deg`)] }];
+        gesture.edits = [
+          { ...snapshot.target, ops: [styleOp(ROTATE_STYLE_KEY, `${round(rotation)}deg`)] },
+        ];
       } else {
         const snapshot = gesture.snapshots[0];
-        const frame = resizeRect(snapshot.frame, gesture.mode, delta, event.shiftKey);
+        let frame = resizeRect(snapshot.frame, gesture.mode, delta, event.shiftKey);
+        // Snapping an edge of a rotated box or an aspect-locked resize would skew the result.
+        if (snap && !event.shiftKey && snapshot.rotation === 0) {
+          const snapped = snapResize(
+            frame,
+            gesture.mode,
+            visual.snapping ? gesture.candidates : [],
+            6 / gesture.canvas.scale,
+            snap,
+          );
+          frame = snapped.frame;
+          nextGuides = snapped.guides;
+        }
         gesture.edits = [
           {
             ...snapshot.target,
@@ -513,6 +540,9 @@ export function InspectOverlay() {
     committing,
     bufferBatch,
     visual.snapping,
+    visual.thirds,
+    visual.grid.enabled,
+    visual.grid.size,
     cancel,
     openCrop,
   ]);
@@ -608,7 +638,18 @@ export function InspectOverlay() {
           <div
             key={`${guide.axis}:${guide.position}`}
             data-alignment-guide={guide.axis}
-            className="absolute bg-cyan-500"
+            data-guide-kind={guide.kind ?? 'object'}
+            className={cn(
+              'absolute',
+              guide.kind === 'third'
+                ? 'border-fuchsia-500 border-dashed'
+                : guide.kind === 'grid'
+                  ? 'border-amber-500/70 border-dotted'
+                  : 'bg-cyan-500',
+              guide.kind &&
+                guide.kind !== 'object' &&
+                (guide.axis === 'x' ? 'border-l' : 'border-t'),
+            )}
             style={
               guide.axis === 'x'
                 ? {

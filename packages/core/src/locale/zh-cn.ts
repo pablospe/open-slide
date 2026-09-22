@@ -240,6 +240,22 @@ export const zhCN: Locale = {
     sendToBack: '置于底层',
     snappingLabel: '吸附',
     smartGuides: '智能参考线',
+    layoutLabel: 'Layout',
+    clearLayout: 'Clear layout',
+    clearLayoutTransform: 'Clear position and rotation',
+    clearLayoutAll: 'Clear all layout',
+    clearLayoutHint:
+      'Removes the offset and rotation from dragging. Alt-click to also remove size and layering.',
+    clearLayoutNothing:
+      'Nothing to clear: no offset, rotation, size or layering in the inline style',
+    clearLayoutAltOnly:
+      'No offset or rotation to clear. Alt-click or use the menu to clear size and layering.',
+    clearLayoutOptions: 'Clear layout options',
+    clearLayoutKeptPosition:
+      'Kept position: relative because nested elements are positioned against it.',
+    snapThirds: 'Thirds',
+    snapGrid: 'Grid',
+    gridSize: 'Grid size',
     selectParent: '选择父级',
     selectAll: '全选',
     visualEditorHint:

@@ -3,6 +3,78 @@ import { findSlideSource } from './fiber';
 import { type Point, type Rect, solveResizeDimensions } from './geometry';
 import type { EditOp } from './use-editor';
 
+export const TRANSLATE_STYLE_KEY = 'translate';
+export const ROTATE_STYLE_KEY = 'rotate';
+export const TRANSFORM_STYLE_KEYS = [TRANSLATE_STYLE_KEY, ROTATE_STYLE_KEY] as const;
+export const SIZE_STYLE_KEYS = ['width', 'height'] as const;
+export const SIZE_CONSTRAINT_STYLES = {
+  minWidth: '0px',
+  minHeight: '0px',
+  maxWidth: 'none',
+  maxHeight: 'none',
+  flexShrink: '0',
+  flexGrow: '0',
+  flexBasis: 'auto',
+} as const;
+export const LAYER_POSITION_STYLE = { position: 'relative' } as const;
+export const LAYER_INSET_KEYS = [
+  'inset',
+  'insetInline',
+  'insetBlock',
+  'insetInlineStart',
+  'insetInlineEnd',
+  'insetBlockStart',
+  'insetBlockEnd',
+  'top',
+  'right',
+  'bottom',
+  'left',
+] as const;
+export const LAYER_INSET_VALUE = 'auto';
+export const Z_INDEX_KEY = 'zIndex';
+
+export const GESTURE_STYLE_KEYS: readonly string[] = [
+  ...TRANSFORM_STYLE_KEYS,
+  ...SIZE_STYLE_KEYS,
+  ...Object.keys(SIZE_CONSTRAINT_STYLES),
+  ...Object.keys(LAYER_POSITION_STYLE),
+  ...LAYER_INSET_KEYS,
+  Z_INDEX_KEY,
+];
+
+export type ClearLayoutScope = 'transform' | 'all';
+
+// Keys the editor writes with a fixed value are only cleared when they still hold that value, so
+// an authored `position: 'absolute'` or `maxWidth: 600` survives a full clear.
+function writtenValue(key: string): string | null {
+  if (key in SIZE_CONSTRAINT_STYLES)
+    return SIZE_CONSTRAINT_STYLES[key as keyof typeof SIZE_CONSTRAINT_STYLES];
+  if (key in LAYER_POSITION_STYLE)
+    return LAYER_POSITION_STYLE[key as keyof typeof LAYER_POSITION_STYLE];
+  if ((LAYER_INSET_KEYS as readonly string[]).includes(key)) return LAYER_INSET_VALUE;
+  return null;
+}
+
+export function clearLayoutOps(
+  inline: Readonly<Record<string, string | undefined>>,
+  scope: ClearLayoutScope,
+): EditOp[] {
+  const keys: readonly string[] = scope === 'transform' ? TRANSFORM_STYLE_KEYS : GESTURE_STYLE_KEYS;
+  return keys
+    .filter((key) => {
+      const value = inline[key]?.trim();
+      if (!value) return false;
+      const written = writtenValue(key);
+      return written === null || value === written;
+    })
+    .map((key) => ({ kind: 'set-style', key, value: null }));
+}
+
+export function readInlineLayout(anchor: HTMLElement): Record<string, string> {
+  const style = anchor.style as unknown as Record<string, string>;
+  return Object.fromEntries(GESTURE_STYLE_KEYS.map((key) => [key, style[key] ?? '']));
+}
+
 export type Canvas = {
   root: HTMLElement;
   rect: DOMRect;
@@ -144,7 +216,7 @@ export function moveOps(snapshot: TransformSnapshot, delta: Point, canvas: Canva
   });
   return [
     styleOp(
-      'translate',
+      TRANSLATE_STYLE_KEY,
       `${round(snapshot.translate.x + local.x)}px ${round(snapshot.translate.y + local.y)}px`,
     ),
   ];
@@ -158,15 +230,9 @@ export function sizeOps(
 ): EditOp[] {
   const anchor = snapshot.target.anchor;
   restoreTransform(snapshot);
-  const constraints = [
-    styleOp('minWidth', '0px'),
-    styleOp('minHeight', '0px'),
-    styleOp('maxWidth', 'none'),
-    styleOp('maxHeight', 'none'),
-    styleOp('flexShrink', '0'),
-    styleOp('flexGrow', '0'),
-    styleOp('flexBasis', 'auto'),
-  ];
+  const constraints = Object.entries(SIZE_CONSTRAINT_STYLES).map(([key, value]) =>
+    styleOp(key, value),
+  );
   const dimensions = (width: number, height: number) => [
     styleOp('width', `${round(Math.max(8, width))}px`),
     styleOp('height', `${round(Math.max(8, height))}px`),

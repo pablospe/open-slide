@@ -10,7 +10,11 @@ import {
   ArrowDown,
   ArrowUp,
   BringToFront,
+  ChevronDown,
   CornerLeftUp,
+  Eraser,
+  Grid3x3,
+  Grip,
   type LucideIcon,
   Magnet,
   SendToBack,
@@ -18,11 +22,25 @@ import {
 import { useEffect, useId, useRef, useState } from 'react';
 import { Field, Section } from '@/components/panel/panel-fields';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Toggle } from '@/components/ui/toggle';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { canTransform, readCanvas, readFrame, readRotation } from '@/lib/inspector/visual-dom';
+import {
+  type ClearLayoutScope,
+  canTransform,
+  clearLayoutOps,
+  readCanvas,
+  readFrame,
+  readInlineLayout,
+  readRotation,
+} from '@/lib/inspector/visual-dom';
 import { format, useLocale } from '@/lib/use-locale';
 import { round2 } from '@/lib/utils';
 import { useInspector } from './inspector-provider';
@@ -35,7 +53,12 @@ type Frame = {
   rotation: number;
   editable: boolean;
   shared: boolean;
+  clearable: Record<ClearLayoutScope, boolean>;
 };
+
+function hasLayoutToClear(anchors: HTMLElement[], scope: ClearLayoutScope): boolean {
+  return anchors.some((anchor) => clearLayoutOps(readInlineLayout(anchor), scope).length > 0);
+}
 
 export function ArrangePanel() {
   const { selection, opsVersion, visual, committing } = useInspector();
@@ -71,6 +94,10 @@ export function ArrangePanel() {
             canvas.root.querySelectorAll(`[data-slide-loc="${target.line}:${target.column}"]`)
               .length > 1,
         ),
+        clearable: {
+          transform: hasLayoutToClear(anchors, 'transform'),
+          all: hasLayoutToClear(anchors, 'all'),
+        },
       });
     };
     update();
@@ -238,6 +265,55 @@ export function ArrangePanel() {
             onClick={() => visual.arrange('back')}
           />
         </Field>
+        <Field label={t.layoutLabel}>
+          <Tooltip>
+            <TooltipTrigger render={<span className="flex min-w-0 flex-1" />}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="min-w-0 flex-1 rounded-r-none"
+                disabled={blocked || !frame.clearable.all}
+                onClick={(event) => visual.clearLayout(event.altKey ? 'all' : 'transform')}
+              >
+                <Eraser data-icon="inline-start" />
+                {t.clearLayout}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-60">
+              {frame.clearable.transform
+                ? t.clearLayoutHint
+                : frame.clearable.all
+                  ? t.clearLayoutAltOnly
+                  : t.clearLayoutNothing}
+            </TooltipContent>
+          </Tooltip>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  className="-ml-1.5 rounded-l-none border-l-0"
+                  aria-label={t.clearLayoutOptions}
+                  disabled={blocked || !frame.clearable.all}
+                />
+              }
+            >
+              <ChevronDown />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent data-inspector-ui align="end" className="min-w-[200px]">
+              <DropdownMenuItem
+                disabled={!frame.clearable.transform}
+                onClick={() => visual.clearLayout('transform')}
+              >
+                {t.clearLayoutTransform}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => visual.clearLayout('all')}>
+                {t.clearLayoutAll}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </Field>
         <Field label={t.snappingLabel}>
           <Toggle
             size="sm"
@@ -250,6 +326,38 @@ export function ArrangePanel() {
             <Magnet data-icon="inline-start" />
             {t.smartGuides}
           </Toggle>
+          <Toggle
+            size="sm"
+            variant="outline"
+            disabled={committing}
+            pressed={visual.thirds}
+            onPressedChange={visual.setThirds}
+            aria-label={t.snapThirds}
+          >
+            <Grid3x3 data-icon="inline-start" />
+            {t.snapThirds}
+          </Toggle>
+        </Field>
+        <Field label={t.snapGrid}>
+          <Toggle
+            size="sm"
+            variant="outline"
+            disabled={committing}
+            pressed={visual.grid.enabled}
+            onPressedChange={(enabled) => visual.setGrid((grid) => ({ ...grid, enabled }))}
+            aria-label={t.snapGrid}
+          >
+            <Grip data-icon="inline-start" />
+            {t.snapGrid}
+          </Toggle>
+          <FrameInput
+            label="px"
+            ariaLabel={t.gridSize}
+            value={visual.grid.size}
+            min={1}
+            disabled={committing}
+            onChange={(size) => visual.setGrid((grid) => ({ ...grid, size }))}
+          />
         </Field>
         <div className="flex items-center gap-1.5">
           <Button

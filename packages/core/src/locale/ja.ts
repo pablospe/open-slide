@@ -242,6 +242,22 @@ export const ja: Locale = {
     sendToBack: '最背面へ移動',
     snappingLabel: 'スナップ',
     smartGuides: 'スマートガイド',
+    layoutLabel: 'Layout',
+    clearLayout: 'Clear layout',
+    clearLayoutTransform: 'Clear position and rotation',
+    clearLayoutAll: 'Clear all layout',
+    clearLayoutHint:
+      'Removes the offset and rotation from dragging. Alt-click to also remove size and layering.',
+    clearLayoutNothing:
+      'Nothing to clear: no offset, rotation, size or layering in the inline style',
+    clearLayoutAltOnly:
+      'No offset or rotation to clear. Alt-click or use the menu to clear size and layering.',
+    clearLayoutOptions: 'Clear layout options',
+    clearLayoutKeptPosition:
+      'Kept position: relative because nested elements are positioned against it.',
+    snapThirds: 'Thirds',
+    snapGrid: 'Grid',
+    gridSize: 'Grid size',
     selectParent: '親要素を選択',
     selectAll: 'すべて選択',
     visualEditorHint:
