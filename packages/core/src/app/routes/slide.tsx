@@ -271,11 +271,20 @@ export function Slide() {
       } catch (err) {
         setPages(before);
         remapNotesSessionCacheAfterReorder(slideId, restore);
-        showPage(index);
+        setSearchParams(
+          (prev) => {
+            const shown = Number(prev.get('p') ?? '1') - 1;
+            if (!Number.isFinite(shown) || shown < at) return prev;
+            const next = new URLSearchParams(prev);
+            next.set('p', String(Math.max(1, shown)));
+            return next;
+          },
+          { replace: true },
+        );
         toast.error(`${t.thumbnailRail.toastAddFailed}: ${String((err as Error).message ?? err)}`);
       }
     },
-    [pages, index, slideId, setSearchParams, t.thumbnailRail],
+    [pages, slideId, setSearchParams, t.thumbnailRail],
   );
 
   const duplicatePage = useCallback(

@@ -635,6 +635,17 @@ function separatorsBetween(source: string, nodes: t.Node[]): string[] {
   return out;
 }
 
+// Existing gaps can hold section comments (`A,\n  // Part two\n  B`); the
+// new separator keeps only their line break and indentation so no comment is
+// duplicated onto the inserted entry.
+function commentFreeSeparator(sample: string): string {
+  const lastBreak = sample.lastIndexOf('\n');
+  if (lastBreak === -1) return ', ';
+  const eol = sample[lastBreak - 1] === '\r' ? '\r\n' : '\n';
+  const indent = sample.slice(lastBreak + 1).match(/^[ \t]*/)?.[0] ?? '';
+  return `,${eol}${indent}`;
+}
+
 // Splice `text` into an array literal so it lands at position `index`, reusing
 // the array's own separator style. Returns null for an empty array whose
 // brackets hold anything but whitespace (a comment we would have to straddle).
@@ -652,7 +663,9 @@ function insertIntoArraySplice(
     return { from: arrayStart, to: arrayEnd, text: `[${text}]` };
   }
   const prefix = source.slice(arrayStart, elements[0].start ?? 0);
-  const sep = chooseInsertSeparator(prefix, separatorsBetween(source, elements));
+  const sep = commentFreeSeparator(
+    chooseInsertSeparator(prefix, separatorsBetween(source, elements)),
+  );
   if (index < elements.length) {
     const at = elements[index].start ?? 0;
     return { from: at, to: at, text: `${text}${sep}` };

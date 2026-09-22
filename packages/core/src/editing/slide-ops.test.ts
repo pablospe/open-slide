@@ -612,6 +612,26 @@ describe('addPageToDefaultExportInSource', () => {
     expect(added(multiline, 0).source).toContain('export default [\n  A,\n  Page2,\n  B,\n];');
   });
 
+  it('never copies comments from existing gaps into the new separator', () => {
+    const commented = [
+      'const A = () => <div />;',
+      'const B = () => <div />;',
+      "export const notes = ['a', // A",
+      "  'b', // B",
+      '];',
+      'export default [',
+      '  A,',
+      '  // Part two',
+      '  B,',
+      '];',
+    ].join('\n');
+    const end = added(commented, 1).source;
+    expect(end).toContain('export default [\n  A,\n  // Part two\n  B,\n  Page3,\n];');
+    const front = added(commented, -1).source;
+    expect(front).toContain('export default [\n  Page1,\n  A,\n  // Part two\n  B,\n];');
+    expect(front).toContain("export const notes = [undefined,\n  'a', // A\n  'b', // B\n];");
+  });
+
   it('adds the first page to an empty deck', () => {
     const empty =
       "import type { Page } from '@open-slide/core';\n\nexport default [] satisfies Page[];\n";
