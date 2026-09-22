@@ -5,7 +5,9 @@ import {
   type MouseEvent,
   type ReactElement,
   type ReactNode,
+  type TouchEvent,
   useEffect,
+  useRef,
   useState,
 } from 'react';
 import { toast } from 'sonner';
@@ -113,17 +115,29 @@ export function EditorContextMenu({
   const [open, setOpen] = useState(false);
   const { readState, run } = useEditorActions({ onAddPage });
 
-  const onContextMenu = (event: BaseUIEvent<MouseEvent<HTMLElement>>) => {
-    const target = event.target;
-    if (
-      committing ||
-      !isInspectableEventTarget(target) ||
-      inlineEdit?.anchor.contains(target as Node) ||
-      document.querySelector('[data-visual-gesture]')
-    ) {
-      event.preventBaseUIHandler();
-      return;
-    }
+  const triggerRef = useRef<HTMLDivElement>(null);
+
+  // Base UI swallows every contextmenu event inside the trigger at the document level, so right
+  // clicks that should get the browser menu (inline text editing, save bar, comment widget) must
+  // stop before they bubble there.
+  useEffect(() => {
+    const trigger = triggerRef.current;
+    if (!trigger || !active) return;
+    const onNativeContextMenu = (event: globalThis.MouseEvent) => {
+      const target = event.target;
+      if (
+        committing ||
+        !isInspectableEventTarget(target) ||
+        inlineEdit?.anchor.contains(target as Node) ||
+        document.querySelector('[data-visual-gesture]')
+      )
+        event.stopPropagation();
+    };
+    trigger.addEventListener('contextmenu', onNativeContextMenu, true);
+    return () => trigger.removeEventListener('contextmenu', onNativeContextMenu, true);
+  }, [active, committing, inlineEdit]);
+
+  const onContextMenu = (event: MouseEvent<HTMLElement>) => {
     const canvas = readCanvas();
     const element = pickInspectorTarget(pickElement(event.clientX, event.clientY));
     let hit = element ? findSlideSource(element, slideId, { hostOnly: true }) : null;
@@ -145,7 +159,14 @@ export function EditorContextMenu({
 
   return (
     <ContextMenu disabled={!active} onOpenChange={setOpen}>
-      <ContextMenuTrigger render={render} onContextMenu={onContextMenu}>
+      <ContextMenuTrigger
+        ref={triggerRef}
+        render={render}
+        onContextMenu={onContextMenu}
+        // Base UI's long-press opens the menu without our selection logic; touch browsers that
+        // support it still send a contextmenu event, which does go through it.
+        onTouchStart={(event: BaseUIEvent<TouchEvent<HTMLElement>>) => event.preventBaseUIHandler()}
+      >
         {children}
       </ContextMenuTrigger>
       <ContextMenuContent data-inspector-ui data-editor-context-menu className="w-[260px]">

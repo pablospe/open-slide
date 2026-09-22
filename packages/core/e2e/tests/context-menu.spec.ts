@@ -54,4 +54,15 @@ test('right-click selects the element and duplicates it from the menu', async ({
   await expect(menu).toBeHidden();
   await expect.poll(() => readSlideSource(SLIDE_ID)).toBe(source('Alpha', 'Beta', 'Beta'));
   await expect(canvas.getByText('Beta', { exact: true })).toHaveCount(2);
+
+  const alpha = canvas.getByText('Alpha', { exact: true });
+  await alpha.dblclick();
+  await expect(alpha).toHaveAttribute('contenteditable', /true|plaintext-only/);
+  const prevented = await alpha.evaluate((node) => {
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 });
+    node.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+  expect(prevented).toBe(false);
+  await expect(menu).toBeHidden();
 });
