@@ -460,7 +460,9 @@ export default [Only] satisfies Page[];
     await page.mouse.move(box.x + 600 * scale, box.y + 400 * scale, { steps: 8 });
     await page.mouse.up();
     await expect(
-      page.locator('aside[data-inspector-ui]').getByText('2 elements selected', { exact: true }),
+      page
+        .getByRole('tabpanel', { name: 'Arrange', exact: true })
+        .getByText('2 elements selected', { exact: true }),
     ).toBeVisible();
     await first.click({ trial: true });
     const beforeFirst = await geometry(first);
@@ -496,7 +498,9 @@ export default [Only] satisfies Page[];
     );
     await page.mouse.up();
     await expect(
-      page.locator('aside[data-inspector-ui]').getByText('3 elements selected', { exact: true }),
+      page
+        .getByRole('tabpanel', { name: 'Arrange', exact: true })
+        .getByText('3 elements selected', { exact: true }),
     ).toBeVisible();
   });
 
@@ -530,7 +534,9 @@ export default [Only] satisfies Page[];
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     await page.keyboard.press('ControlOrMeta+a');
     await expect(
-      page.locator('aside[data-inspector-ui]').getByText('3 elements selected', { exact: true }),
+      page
+        .getByRole('tabpanel', { name: 'Arrange', exact: true })
+        .getByText('3 elements selected', { exact: true }),
     ).toBeVisible();
     await panel.getByRole('button', { name: 'Distribute horizontally', exact: true }).click();
     await expectGeometry(second, { x: 620, y: 360 });

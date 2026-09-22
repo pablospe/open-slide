@@ -60,7 +60,7 @@ test.describe('text mixing literals and expressions', () => {
     const reason = panel.locator('[data-text-refusal="dynamic-text"]');
     await expect(reason).toContainText('dynamic text');
     await expect(reason).toContainText('rendered 2 times');
-    await expect(panel.getByRole('button', { name: 'Edit text on slide' })).toBeDisabled();
+    await expect(panel.getByRole('button', { name: 'Edit on slide' })).toBeDisabled();
     await expect(page.getByText('This text contains dynamic text')).toBeVisible();
     await expect(editorCanvas(page).locator('[contenteditable="true"]')).toHaveCount(0);
 
