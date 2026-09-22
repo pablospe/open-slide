@@ -435,6 +435,11 @@ export const zhCN: Locale = {
   thumbnailRail: {
     pages: '页面',
     goToPageAria: '前往第 {n} 页',
+    addPage: 'Add page',
+    addPageAfter: 'Add page after',
+    addPageAtEnd: 'Add a blank page at the end',
+    toastAdded: 'Added page {n}',
+    toastAddFailed: 'Could not add page',
     duplicatePage: '复制',
     deletePage: '删除',
     pageActionsAria: '第 {n} 页的操作',
