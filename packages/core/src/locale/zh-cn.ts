@@ -221,7 +221,7 @@ export const zhCN: Locale = {
     trackingLabel: '字距',
     alignLabel: '对齐',
     clearAria: '清除',
-    designTokenSwatch: '使用设计色：{name}',
+    designTokenSwatchAria: '使用设计色：{name}',
     replace: '替换…',
     replaceImageDialogTitle: '替换图片',
     replaceImageDescription: '从 {path} 选择素材。',

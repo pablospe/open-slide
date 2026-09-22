@@ -308,7 +308,7 @@ export function InspectorPanel() {
         <ColorField
           label={t.inspector.textColor}
           value={typographySnapshot.color}
-          palette={palette}
+          palette={contentRange ? null : palette}
           pendingValue={pendingStyleValue(pinSelected.line, pinSelected.column, 'color')}
           onChange={(v) => applyTextStyle([{ kind: 'set-style', key: 'color', value: v }])}
           clearable={false}
@@ -384,7 +384,7 @@ function stylePreviewFromOps(ops: Array<Extract<EditOp, { kind: 'set-style' }>>)
       preview.fontWeight = op.value ? Number(op.value) || 400 : 400;
     } else if (op.key === 'fontStyle') {
       preview.fontStyle = op.value === 'italic' ? 'italic' : 'normal';
-    } else if (op.key === 'color' && op.value?.startsWith('#')) {
+    } else if (op.key === 'color' && op.value) {
       preview.color = op.value;
     }
   }
@@ -773,7 +773,9 @@ function ColorField({
         <div className="flex items-center gap-1.5">
           {PALETTE_TOKENS.map((token) => {
             const tokenVar = paletteTokenVar(token);
-            const name = format(tColor.inspector.designTokenSwatch, { name: tokenLabels[token] });
+            const name = format(tColor.inspector.designTokenSwatchAria, {
+              name: tokenLabels[token],
+            });
             return (
               <button
                 key={token}

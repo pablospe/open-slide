@@ -1,3 +1,4 @@
+import fs from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import {
   deleteSlide,
@@ -5,7 +6,16 @@ import {
   editorCanvas,
   openSlide,
   readSlideSource,
+  slideSourcePath,
 } from './helpers.ts';
+
+const DESIGN_EXPORT = `export const design = {
+  palette: { bg: '#1a1408', text: '#f5ead2', accent: '#ff3366' },
+  fonts: { display: 'system-ui', body: 'system-ui' },
+  typeScale: { hero: 168, body: 36 },
+  radius: 12,
+};
+`;
 
 test.describe('inspector editing', () => {
   const createdSlides: string[] = [];
@@ -20,9 +30,14 @@ test.describe('inspector editing', () => {
     page: import('@playwright/test').Page,
     request: import('@playwright/test').APIRequestContext,
     slideId: string,
+    prepend = '',
   ) {
     createdSlides.push(slideId);
     await duplicateSlide(request, 'edit-target', slideId);
+    if (prepend) {
+      const file = slideSourcePath(slideId);
+      await fs.writeFile(file, prepend + (await fs.readFile(file, 'utf8')));
+    }
     await openSlide(page, slideId);
   }
 
@@ -92,12 +107,7 @@ test.describe('inspector editing', () => {
   });
 
   test('style toggles restyle the element live and save to disk', async ({ page, request }) => {
-    await openEditable(page, request, 'insp-style');
-    const seeded = await request.put('/__design?slideId=insp-style', {
-      data: { patch: { palette: { bg: '#1a1408', text: '#f5ead2', accent: '#ff3366' } } },
-    });
-    expect(seeded.ok()).toBe(true);
-    await openSlide(page, 'insp-style');
+    await openEditable(page, request, 'insp-style', DESIGN_EXPORT);
     await page.getByTitle('Inspect').click();
     const headline = editorCanvas(page).getByText('Editable headline');
     await headline.click();

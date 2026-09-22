@@ -230,7 +230,7 @@ export type Locale = {
     alignLabel: string;
     clearAria: string;
     /** template: "Use design color: {name}" */
-    designTokenSwatch: string;
+    designTokenSwatchAria: string;
     replace: string;
     replaceImageDialogTitle: string;
     /** template: "Pick an asset from {path}." */
