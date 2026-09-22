@@ -210,6 +210,17 @@ export const zhCN: Locale = {
     appearanceSection: '外观',
     spacingSection: '间距',
     sourceSection: '源代码与代理',
+    copySourceLocation: 'Copy source location',
+    copyForAgent: 'Copy for agent',
+    sourceLocationCopied: 'Source location copied',
+    agentSnippetCopied: 'Copied location and element for your agent',
+    clipboardFailed: 'Could not copy to the clipboard',
+    sourceLocationMore: '+{count}',
+    untracedTitle: 'Not in this slide’s source',
+    untracedHint:
+      'This <{tag}> comes from the layout or an imported component, not {file}. Pick an element written in that file.',
+    sharedInstancesHint:
+      'Rendered {count} times from this line. Style edits change every copy, and it can’t be moved on its own.',
     rotateHandle: '旋转元素',
     resizeHandle: '调整尺寸（{handle}）',
     arrangeSection: '排列',

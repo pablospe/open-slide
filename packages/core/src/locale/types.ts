@@ -214,6 +214,15 @@ export type Locale = {
     appearanceSection: string;
     spacingSection: string;
     sourceSection: string;
+    copySourceLocation: string;
+    copyForAgent: string;
+    sourceLocationCopied: string;
+    agentSnippetCopied: string;
+    clipboardFailed: string;
+    sourceLocationMore: string;
+    untracedTitle: string;
+    untracedHint: string;
+    sharedInstancesHint: string;
     rotateHandle: string;
     resizeHandle: string;
     arrangeSection: string;
