@@ -93,6 +93,11 @@ test.describe('inspector editing', () => {
 
   test('style toggles restyle the element live and save to disk', async ({ page, request }) => {
     await openEditable(page, request, 'insp-style');
+    const seeded = await request.put('/__design?slideId=insp-style', {
+      data: { patch: { palette: { bg: '#1a1408', text: '#f5ead2', accent: '#ff3366' } } },
+    });
+    expect(seeded.ok()).toBe(true);
+    await openSlide(page, 'insp-style');
     await page.getByTitle('Inspect').click();
     const headline = editorCanvas(page).getByText('Editable headline');
     await headline.click();
@@ -103,6 +108,9 @@ test.describe('inspector editing', () => {
     await bold.click();
     await italic.click();
     await panel.getByRole('button', { name: 'center', exact: true }).click();
+    const accentText = panel.getByRole('button', { name: 'Use design color: Accent' }).first();
+    await accentText.click();
+    await expect(accentText).toHaveAttribute('aria-pressed', 'true');
     await expect(bold).toHaveAttribute('aria-pressed', 'true');
     await expect(italic).toHaveAttribute('aria-pressed', 'true');
     await expect(headline).toHaveCSS('font-weight', '700');
@@ -118,6 +126,14 @@ test.describe('inspector editing', () => {
     const src = await readSlideSource('insp-style');
     expect(src).toContain('fontWeight');
     expect(src).toContain('fontStyle');
+    expect(src).toContain("color: 'var(--osd-accent)'");
+    expect(src).not.toMatch(/color: '#ff3366'/i);
+
+    await openSlide(page, 'insp-style');
+    await expect(editorCanvas(page).getByText('Editable headline')).toHaveCSS(
+      'color',
+      'rgb(255, 51, 102)',
+    );
   });
 
   test('undo and redo step through an inspector edit', async ({ page, request }) => {

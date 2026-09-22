@@ -28,13 +28,16 @@ import { Textarea } from '@/components/ui/textarea';
 import { Toggle } from '@/components/ui/toggle';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { type DesignPalette, paletteTokenVar } from '@/lib/design';
 import { findSlideSource } from '@/lib/inspector/fiber';
 import { hasOnlyInlineTextChildren } from '@/lib/inspector/inline-text';
 import type { EditOp } from '@/lib/inspector/use-editor';
 import { useAgentSocketConnected } from '@/lib/use-agent-socket';
 import { useLocale } from '@/lib/use-locale';
 import { cn, round2 } from '@/lib/utils';
+import { format } from '../../../locale/format';
 import type { Locale } from '../../../locale/types';
+import { useDesignPanelState } from '../style-panel/design-provider';
 import { AssetPickerDialog } from './asset-picker-dialog';
 import { type SelectedTarget, useInspector } from './inspector-provider';
 
@@ -80,10 +83,12 @@ export function InspectorPanel() {
     setSelected,
     bufferOps,
     pendingCount,
+    pendingStyleValue,
     opsVersion,
     add,
     applyEdit,
   } = useInspector();
+  const { exists: hasDesign, draft: design } = useDesignPanelState();
   const [snapshot, setSnapshot] = useState<ElementSnapshot | null>(null);
   const [contentSelection, setContentSelection] = useState<ContentSelection | null>(null);
   const [rangeStylePreview, setRangeStylePreview] = useState<RangeStylePreview | null>(null);
@@ -171,6 +176,7 @@ export function InspectorPanel() {
 
   if (!pinned) return null;
   const { s: pinSelected, n: pinSnapshot } = pinned;
+  const palette = hasDesign ? (design?.palette ?? null) : null;
   const contentRange =
     pinSnapshot.text !== null && contentSelection && contentSelection.end > contentSelection.start
       ? contentSelection
@@ -302,6 +308,8 @@ export function InspectorPanel() {
         <ColorField
           label={t.inspector.textColor}
           value={typographySnapshot.color}
+          palette={palette}
+          pendingValue={pendingStyleValue(pinSelected.line, pinSelected.column, 'color')}
           onChange={(v) => applyTextStyle([{ kind: 'set-style', key: 'color', value: v }])}
           clearable={false}
         />
@@ -309,6 +317,8 @@ export function InspectorPanel() {
           label={t.inspector.backgroundColor}
           value={pinSnapshot.backgroundColor ?? '#ffffff'}
           dim={!pinSnapshot.backgroundColor}
+          palette={palette}
+          pendingValue={pendingStyleValue(pinSelected.line, pinSelected.column, 'backgroundColor')}
           onChange={(v) => apply([{ kind: 'set-style', key: 'backgroundColor', value: v }])}
           onClear={() => apply([{ kind: 'set-style', key: 'backgroundColor', value: null }])}
           clearable
@@ -374,7 +384,7 @@ function stylePreviewFromOps(ops: Array<Extract<EditOp, { kind: 'set-style' }>>)
       preview.fontWeight = op.value ? Number(op.value) || 400 : 400;
     } else if (op.key === 'fontStyle') {
       preview.fontStyle = op.value === 'italic' ? 'italic' : 'normal';
-    } else if (op.key === 'color' && op.value) {
+    } else if (op.key === 'color' && op.value?.startsWith('#')) {
       preview.color = op.value;
     }
   }
@@ -669,10 +679,14 @@ function TextAlignField({
   );
 }
 
+const PALETTE_TOKENS = ['bg', 'text', 'accent'] as const;
+
 function ColorField({
   label,
   value,
   dim,
+  palette,
+  pendingValue,
   onChange,
   onClear,
   clearable,
@@ -680,6 +694,8 @@ function ColorField({
   label: string;
   value: string;
   dim?: boolean;
+  palette?: DesignPalette | null;
+  pendingValue?: string | null;
   onChange: (v: string) => void;
   onClear?: () => void;
   clearable: boolean;
@@ -694,7 +710,13 @@ function ColorField({
     if (/^#[0-9a-fA-F]{6}$/.test(hex)) onChange(hex);
   };
 
-  return (
+  const tokenLabels: Record<keyof DesignPalette, string> = {
+    bg: tColor.stylePanel.backgroundLabel,
+    text: tColor.stylePanel.textLabel,
+    accent: tColor.stylePanel.accentLabel,
+  };
+
+  const field = (
     <Field label={label}>
       <label className="relative inline-flex size-8 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-md border bg-background shadow-xs transition-[border-color,scale] duration-150 hover:border-foreground/20 active:scale-[0.96] has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring/40">
         <span
@@ -740,6 +762,35 @@ function ColorField({
         </Button>
       )}
     </Field>
+  );
+
+  if (!palette) return field;
+
+  return (
+    <div className="space-y-1.5">
+      <div className="grid grid-cols-[68px_1fr] items-center gap-3">
+        <span aria-hidden />
+        <div className="flex items-center gap-1.5">
+          {PALETTE_TOKENS.map((token) => {
+            const tokenVar = paletteTokenVar(token);
+            const name = format(tColor.inspector.designTokenSwatch, { name: tokenLabels[token] });
+            return (
+              <button
+                key={token}
+                type="button"
+                title={name}
+                aria-label={name}
+                aria-pressed={pendingValue === tokenVar}
+                onClick={() => onChange(tokenVar)}
+                className="size-5 cursor-pointer rounded-sm border border-foreground/15 shadow-xs transition-[scale,box-shadow] duration-150 hover:border-foreground/30 active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 aria-pressed:ring-2 aria-pressed:ring-foreground/70 aria-pressed:ring-offset-1 aria-pressed:ring-offset-background"
+                style={{ backgroundColor: palette[token] }}
+              />
+            );
+          })}
+        </div>
+      </div>
+      {field}
+    </div>
   );
 }
 
