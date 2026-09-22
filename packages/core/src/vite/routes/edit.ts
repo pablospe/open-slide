@@ -42,13 +42,18 @@ export function registerEditRoutes(server: ViteDevServer, ctx: ApiContext): void
         const slideId = body.slideId ?? '';
         const file = resolveSlideEntryPath(ctx, slideId);
         if (!file) return json(res, 400, { error: 'invalid slideId' });
-        if (!body.line || body.line < 1) return json(res, 400, { error: 'invalid line' });
         if (!Array.isArray(body.ops)) return json(res, 400, { error: 'missing ops' });
+        const pageInsert =
+          body.ops.length === 1 &&
+          body.ops[0]?.kind === 'insert-snippet' &&
+          body.ops[0].position === 'end-of-page';
+        if (!pageInsert && (!body.line || body.line < 1))
+          return json(res, 400, { error: 'invalid line' });
 
         const source = await readSlideSource(file);
         if (source === null) return json(res, 404, { error: 'slide not found' });
 
-        const result = applyEdit(source, body.line, body.column ?? 0, body.ops);
+        const result = applyEdit(source, body.line ?? 1, body.column ?? 0, body.ops);
         if (!result.ok) {
           return json(res, result.status, {
             error: result.error,

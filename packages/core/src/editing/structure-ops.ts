@@ -7,16 +7,19 @@ import {
   findJsxByStart,
   type Splice,
 } from './edit-ops.ts';
+import { type InsertSnippetOp, planInsertSnippet } from './insert-ops.ts';
 
 export type StructureOp =
   | { kind: 'remove-element'; instanceCount?: number }
   | { kind: 'duplicate-element'; instanceCount?: number }
-  | { kind: 'move-element'; direction: 'earlier' | 'later'; instanceCount?: number };
+  | { kind: 'move-element'; direction: 'earlier' | 'later'; instanceCount?: number }
+  | InsertSnippetOp;
 
 export const STRUCTURE_OP_KINDS: ReadonlySet<string> = new Set([
   'remove-element',
   'duplicate-element',
   'move-element',
+  'insert-snippet',
 ]);
 
 export type StructureRefusal =
@@ -28,13 +31,17 @@ export type StructureRefusal =
   | 'shared'
   | 'comment'
   | 'no-sibling'
-  | 'sibling-not-element';
+  | 'sibling-not-element'
+  | 'unknown-snippet'
+  | 'asset-required'
+  | 'page-not-found'
+  | 'page-root';
 
 export type SourceLocation = { line: number; column: number };
 
 export type StructurePlan =
   | { ok: true; splices: Splice[]; location?: SourceLocation }
-  | { ok: false; status: number; error: string; code: StructureRefusal };
+  | { ok: false; status: number; error: string; code?: StructureRefusal };
 
 export function isStructureOp(op: { kind: string }): op is StructureOp {
   return STRUCTURE_OP_KINDS.has(op.kind);
@@ -50,13 +57,17 @@ const REFUSALS: Record<StructureRefusal, string> = {
   comment: 'the element contains an inspector comment',
   'no-sibling': 'there is no sibling element to swap with in that direction',
   'sibling-not-element': 'the adjacent sibling is text or an expression, not a JSX element',
+  'unknown-snippet': 'unknown snippet',
+  'asset-required': 'this snippet needs an asset path under ./assets/ or @assets/',
+  'page-not-found': 'the page could not be found in the default export',
+  'page-root': 'the page does not return a JSX element that can hold children',
 };
 
-function refuse(code: StructureRefusal): StructurePlan {
+export function refuse(code: StructureRefusal): StructurePlan {
   return { ok: false, status: 422, error: REFUSALS[code], code };
 }
 
-function findParent(ast: t.Node, target: t.Node): t.Node | null {
+export function findParent(ast: t.Node, target: t.Node): t.Node | null {
   let parent: t.Node | null = null;
   walkAll(ast, (node) => {
     for (const value of Object.values(node)) {
@@ -69,7 +80,7 @@ function findParent(ast: t.Node, target: t.Node): t.Node | null {
   return parent;
 }
 
-function isBlankText(node: t.Node): boolean {
+export function isBlankText(node: t.Node): boolean {
   return t.isJSXText(node) && node.value.trim() === '';
 }
 
@@ -79,7 +90,7 @@ function isCommentContainer(node: t.Node): boolean {
 
 // A component defined in this file and rendered at more than one call site
 // shares its JSX: editing it structurally changes every call site at once.
-function isReusedComponent(ast: t.File, element: t.JSXElement): boolean {
+export function isReusedComponent(ast: t.File, element: t.JSXElement): boolean {
   const component = findEnclosingComponent(ast, element);
   if (!component) return false;
   let uses = 0;
@@ -90,7 +101,7 @@ function isReusedComponent(ast: t.File, element: t.JSXElement): boolean {
   return uses > 1;
 }
 
-function offsetToLocation(source: string, offset: number): SourceLocation {
+export function offsetToLocation(source: string, offset: number): SourceLocation {
   const before = source.slice(0, offset);
   return { line: before.split('\n').length, column: offset - before.lastIndexOf('\n') - 1 };
 }
@@ -98,7 +109,7 @@ function offsetToLocation(source: string, offset: number): SourceLocation {
 // The bytes an element owns on its own line(s): leading indentation through
 // the newline after it. `null` when the element shares a line with other
 // content (inline JSX), where only its own bytes are safe to touch.
-function ownedLines(source: string, node: t.Node): { from: number; to: number } | null {
+export function ownedLines(source: string, node: t.Node): { from: number; to: number } | null {
   const start = node.start ?? 0;
   const end = node.end ?? 0;
   const lineStart = source.lastIndexOf('\n', start - 1) + 1;
@@ -182,6 +193,25 @@ function adjacentSibling(
   return 'no-sibling';
 }
 
+// The JSX parent an element sits in as a plain child, or why its siblings
+// cannot be rewritten without touching other renders.
+export function siblingParent(
+  ast: t.File,
+  element: t.JSXElement,
+  instanceCount = 1,
+): t.JSXElement | t.JSXFragment | StructureRefusal {
+  const parent = findParent(ast, element);
+  if (!parent || !(t.isJSXElement(parent) || t.isJSXFragment(parent))) {
+    if (t.isLogicalExpression(parent) || t.isConditionalExpression(parent)) return 'conditional';
+    if (t.isJSXExpressionContainer(parent)) return 'expression';
+    if (findEnclosingMapCallback(ast, element)) return 'map';
+    return 'root';
+  }
+  if (findEnclosingMapCallback(ast, element)) return 'map';
+  if (instanceCount > 1 || isReusedComponent(ast, element)) return 'shared';
+  return parent;
+}
+
 export function planStructureEdit(
   ast: t.File,
   source: string,
@@ -189,18 +219,11 @@ export function planStructureEdit(
   column: number,
   op: StructureOp,
 ): StructurePlan {
+  if (op.kind === 'insert-snippet') return planInsertSnippet(ast, source, line, column, op);
   const element = findJsxByStart(ast, line, column);
   if (!element) return refuse('not-found');
-  const parent = findParent(ast, element);
-  if (!parent || !(t.isJSXElement(parent) || t.isJSXFragment(parent))) {
-    if (t.isLogicalExpression(parent) || t.isConditionalExpression(parent))
-      return refuse('conditional');
-    if (t.isJSXExpressionContainer(parent)) return refuse('expression');
-    if (findEnclosingMapCallback(ast, element)) return refuse('map');
-    return refuse('root');
-  }
-  if (findEnclosingMapCallback(ast, element)) return refuse('map');
-  if ((op.instanceCount ?? 1) > 1 || isReusedComponent(ast, element)) return refuse('shared');
+  const parent = siblingParent(ast, element, op.instanceCount);
+  if (typeof parent === 'string') return refuse(parent);
   if (source.slice(element.start ?? 0, element.end ?? 0).includes('@slide-comment'))
     return refuse('comment');
 
