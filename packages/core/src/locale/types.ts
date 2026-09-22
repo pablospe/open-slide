@@ -281,6 +281,20 @@ export type Locale = {
     structureSingleOnly: string;
     structureExternal: string;
     structureFailed: string;
+    structureShared: string;
+    actionNeedsSelection: string;
+    actionTextEditing: string;
+    actionCommitting: string;
+    actionBusy: string;
+    actionSingleOnly: string;
+    actionNeedsThree: string;
+    actionNotText: string;
+    actionAddPage: string;
+    actionAddPageUnavailable: string;
+    actionNudgeLeft: string;
+    actionNudgeRight: string;
+    actionNudgeUp: string;
+    actionNudgeDown: string;
     structureRefusals: {
       notFound: string;
       root: string;
@@ -546,6 +560,7 @@ export type Locale = {
     groupPages: string;
     groupAppearance: string;
     groupDeveloper: string;
+    groupEditor: string;
     /** template: "Page {n}" */
     goToPage: string;
     overview: string;

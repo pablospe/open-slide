@@ -14,7 +14,6 @@ import {
   styleContext,
 } from '@/lib/inspector/text-selection';
 import type { EditOp } from '@/lib/inspector/use-editor';
-import { isTypingTarget } from '@/lib/keys';
 import { useLocale } from '@/lib/use-locale';
 import { cn } from '@/lib/utils';
 import { type InlineEditTarget, readEditableText, useInspector } from './inspector-provider';
@@ -42,8 +41,7 @@ function pickEditableAnchor(
 }
 
 export function InlineEditLayer() {
-  const { slideId, active, inlineEdit, selected, selection, startInlineEdit, stopInlineEdit } =
-    useInspector();
+  const { slideId, active, inlineEdit, startInlineEdit, stopInlineEdit } = useInspector();
   const layerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -57,43 +55,9 @@ export function InlineEditLayer() {
       event.stopImmediatePropagation();
       startInlineEdit({ ...hit, point: { x: event.clientX, y: event.clientY }, selectWord: true });
     };
-    const onKey = (event: KeyboardEvent) => {
-      if (
-        event.key !== 'Enter' ||
-        event.isComposing ||
-        event.keyCode === 229 ||
-        inlineEdit ||
-        !selected ||
-        selection.length !== 1
-      )
-        return;
-      if (
-        event.metaKey ||
-        event.ctrlKey ||
-        event.altKey ||
-        event.shiftKey ||
-        isTypingTarget(event.target)
-      )
-        return;
-      if (
-        event.target instanceof Element &&
-        event.target.closest(
-          '[data-inspector-ui], [role="dialog"], [role="menu"], [role="listbox"], button, a',
-        )
-      )
-        return;
-      if (!isEditableTextContainer(selected.anchor)) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      startInlineEdit(selected);
-    };
     window.addEventListener('dblclick', onDblClick, true);
-    window.addEventListener('keydown', onKey, true);
-    return () => {
-      window.removeEventListener('dblclick', onDblClick, true);
-      window.removeEventListener('keydown', onKey, true);
-    };
-  }, [active, slideId, inlineEdit, selected, selection.length, startInlineEdit]);
+    return () => window.removeEventListener('dblclick', onDblClick, true);
+  }, [active, slideId, inlineEdit, startInlineEdit]);
 
   useEffect(() => {
     if (!inlineEdit) return;

@@ -29,6 +29,7 @@ import { textDiff } from '@/lib/text-diff';
 import { useLocale } from '@/lib/use-locale';
 import { round2 } from '@/lib/utils';
 import { AssetPickerDialog } from './asset-picker-dialog';
+import { EditorShortcuts } from './editor-context-menu';
 import { ImageCropDialog, type ImageCropRect } from './image-crop-dialog';
 
 export type SelectedTarget = {
@@ -785,8 +786,6 @@ export function InspectorProvider({
   );
 
   const visual = useVisualEditor({
-    active,
-    inlineEditing: !!inlineEdit,
     committing,
     slideId,
     selection,
@@ -795,10 +794,7 @@ export function InspectorProvider({
   });
 
   const structure = useStructureActions({
-    active,
-    inlineEditing: !!inlineEdit,
     committing,
-    pendingCount,
     slideId,
     selection,
     setSelection,
@@ -1291,6 +1287,7 @@ export function InspectorProvider({
   return (
     <Ctx.Provider value={value}>
       {children}
+      <EditorShortcuts />
       {replaceTarget && (
         <AssetPickerDialog
           slideId={slideId}
