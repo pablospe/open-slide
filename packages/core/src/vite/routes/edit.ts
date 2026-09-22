@@ -14,7 +14,7 @@ import {
   resolveSlideEntryPath,
 } from './context.ts';
 
-// POST /__edit                applyEdit({ slideId, line, column, ops })
+// POST /__edit                applyEdit({ slideId, line, column, ops, dryRun? })
 // POST /__edit/revert-asset   applyRevertAsset({ slideId, assetPath })
 // POST /__edit/batch          applyEdit × N — single FS write per request
 // POST /__edit/step-info      stepInfo({ slideId, line, column, instanceCount }), read-only
@@ -24,6 +24,7 @@ type EditBody = {
   line?: number;
   column?: number;
   ops?: EditOp[];
+  dryRun?: boolean;
 };
 
 type EditBatchBody = {
@@ -57,6 +58,16 @@ export function registerEditRoutes(server: ViteDevServer, ctx: ApiContext): void
         if (source === null) return json(res, 404, { error: 'slide not found' });
 
         const result = applyEdit(source, body.line ?? 1, body.column ?? 0, body.ops);
+        // A refusal is the expected answer to a dry run, not a failed request.
+        if (body.dryRun === true) {
+          return json(res, 200, {
+            dryRun: true,
+            ok: result.ok,
+            ...(result.ok ? {} : { error: result.error }),
+            ...(!result.ok && result.code ? { code: result.code } : {}),
+            ...(!result.ok && result.callSites ? { callSites: result.callSites } : {}),
+          });
+        }
         if (!result.ok) {
           return json(res, result.status, {
             error: result.error,

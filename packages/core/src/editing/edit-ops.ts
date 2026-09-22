@@ -3,6 +3,7 @@ import { textDiff } from '../app/lib/text-diff.ts';
 import { findJsxAncestors, parseSource, walkAll, walkJsx } from './babel-walk.ts';
 import { isStepOp, planStepEdit, type StepOp, type StepRefusal } from './steps-ops.ts';
 import {
+  componentRenderCount,
   isStructureOp,
   planStructureEdit,
   type SourceLocation,
@@ -10,7 +11,21 @@ import {
   type StructureRefusal,
 } from './structure-ops.ts';
 
-export type EditRefusal = StructureRefusal | StepRefusal;
+export type TextRefusal = 'dynamic-text';
+
+export type EditRefusal = StructureRefusal | StepRefusal | TextRefusal;
+
+const DYNAMIC_TEXT_ERROR =
+  'the element renders text from code, so the rendered text has no single literal to write back to';
+
+function refuseDynamicText(ast: t.File, element: t.JSXElement): EditFailure {
+  const callSites = componentRenderCount(ast, element);
+  const error =
+    callSites > 1
+      ? `${DYNAMIC_TEXT_ERROR}; it is rendered ${callSites} times from one definition`
+      : DYNAMIC_TEXT_ERROR;
+  return { ok: false, status: 422, error, code: 'dynamic-text', callSites };
+}
 
 export type EditOp =
   | { kind: 'set-style'; key: string; value: string | null; prevText?: string }
@@ -28,13 +43,19 @@ export type EditOp =
   | StructureOp
   | StepOp;
 
-export type ApplyEditResult =
-  | { ok: true; source: string; location?: SourceLocation }
-  | { ok: false; status: number; error: string; code?: EditRefusal };
+// `callSites` comes with a 'dynamic-text' refusal: how many times the text's
+// definition is rendered through this file's components.
+type EditFailure = {
+  ok: false;
+  status: number;
+  error: string;
+  code?: EditRefusal;
+  callSites?: number;
+};
 
-export type EditPlan =
-  | { ok: true; splices: Splice[]; location?: SourceLocation }
-  | { ok: false; status: number; error: string; code?: EditRefusal };
+export type ApplyEditResult = { ok: true; source: string; location?: SourceLocation } | EditFailure;
+
+export type EditPlan = { ok: true; splices: Splice[]; location?: SourceLocation } | EditFailure;
 
 // Structural and step ops rewrite whole element ranges, so each one is
 // planned and applied on its own.
@@ -247,7 +268,9 @@ export function findElementForEdit(
   if (
     hasOnlyTextOps(ops) &&
     element &&
-    (elementTextMatches(element, prevText) || elementTextCandidateMatches(ast, element, prevText))
+    (elementTextMatches(element, prevText) ||
+      elementTextCandidateMatches(ast, element, prevText) ||
+      hasMixedText(element))
   ) {
     return element;
   }
@@ -526,6 +549,31 @@ function collectTextCandidates(element: JsxParent, out: TextCandidate[]): void {
       collectTextCandidates(child, out);
     }
   }
+}
+
+function isLiteralExpression(expr: t.Expression | t.JSXEmptyExpression): boolean {
+  return t.isStringLiteral(expr) || t.isNumericLiteral(expr) || t.isJSXEmptyExpression(expr);
+}
+
+function hasDynamicText(element: JsxParent): boolean {
+  return element.children.some((child) => {
+    if (t.isJSXExpressionContainer(child)) return !isLiteralExpression(child.expression);
+    if (t.isJSXSpreadChild(child)) return true;
+    return (t.isJSXElement(child) || t.isJSXFragment(child)) && hasDynamicText(child);
+  });
+}
+
+// Literal text next to expression output: the DOM shows both, but only the
+// literals exist in source, so the rendered text cannot be written back whole.
+function hasMixedText(element: JsxParent): boolean {
+  return hasOwnText(element) && hasDynamicText(element);
+}
+
+// A mixed element is only editable when every visible character is literal,
+// i.e. its expressions currently render nothing.
+function mixedTextMatches(element: t.JSXElement, prevText: string | undefined): boolean {
+  if (prevText === undefined) return false;
+  return textMatchesExpected(textRangeContent(collectTextRangeParts(element)), prevText);
 }
 
 function collectTextRangeParts(element: JsxParent): TextRangePart[] {
@@ -922,10 +970,15 @@ function collectCallSiteCandidates(ast: t.Node, componentName: string): TextCand
     if (!t.isJSXElement(n)) return;
     const elName = n.openingElement.name;
     if (t.isJSXIdentifier(elName) && elName.name === componentName) {
+      const whole = collapseText(textRangeContent(collectTextRangeParts(n)));
+      // Its literals are only part of what this call site renders.
+      if (hasDynamicText(n)) {
+        out.push({ current: whole, splice: () => ({ from: 0, to: 0, text: '' }), shadow: true });
+        return;
+      }
       const own: TextCandidate[] = [];
       collectTextCandidates(n, own);
       out.push(...own);
-      const whole = collapseText(textRangeContent(collectTextRangeParts(n)));
       if (
         meaningfulChildren(n).length > 1 &&
         !own.some((candidate) => collapseText(candidate.current) === whole)
@@ -1094,7 +1147,7 @@ function collectArrayMapCandidates(ast: t.Node, element: t.JSXElement): TextCand
   return out;
 }
 
-function hasOwnText(element: t.JSXElement): boolean {
+function hasOwnText(element: JsxParent): boolean {
   const own: TextCandidate[] = [];
   collectTextCandidates(element, own);
   return own.length > 0;
@@ -1146,10 +1199,12 @@ function buildTextSplice(
   element: t.JSXElement,
   value: string,
   prevText?: string,
-): Splice | { error: string } {
+): Splice | { error: string; code?: TextRefusal } {
   const candidates = collectElementTextCandidates(ast, element);
   if (candidates.every((candidate) => candidate.shadow)) {
-    return { error: 'element has no editable text' };
+    return hasDynamicText(element)
+      ? { error: DYNAMIC_TEXT_ERROR, code: 'dynamic-text' }
+      : { error: 'element has no editable text' };
   }
   if (candidates.length === 1) {
     return candidates[0].splice(value);
@@ -1307,8 +1362,12 @@ export function planEdit(
     if (result) splices.push(result);
   }
 
+  const mixedText = hasMixedText(element);
+
   for (const op of ops) {
     if (op.kind !== 'set-text-range-style') continue;
+    if (mixedText && !mixedTextMatches(element, op.prevText))
+      return refuseDynamicText(ast, element);
     const result = buildTextRangeStyleSplices(
       ast,
       source,
@@ -1324,6 +1383,15 @@ export function planEdit(
 
   for (const op of ops) {
     if (op.kind !== 'set-text') continue;
+    if (mixedText) {
+      if (op.prevText === undefined || !mixedTextMatches(element, op.prevText)) {
+        return refuseDynamicText(ast, element);
+      }
+      const result = buildTextContentSplices(element, op.value, op.prevText);
+      if ('error' in result) return { ok: false, status: 422, error: result.error };
+      splices.push(...result);
+      continue;
+    }
     if (op.prevText !== undefined && (op.value.includes('\n') || op.prevText.includes('\n'))) {
       const richResult = buildTextContentSplices(element, op.value, op.prevText);
       if (!('error' in richResult)) {
@@ -1333,9 +1401,13 @@ export function planEdit(
     }
     const result = buildTextSplice(ast, element, op.value, op.prevText);
     if ('error' in result) {
-      if (op.prevText === undefined) return { ok: false, status: 422, error: result.error };
+      const refusal: EditFailure =
+        result.code === 'dynamic-text'
+          ? refuseDynamicText(ast, element)
+          : { ok: false, status: 422, error: result.error };
+      if (op.prevText === undefined) return refusal;
       const richResult = buildTextContentSplices(element, op.value, op.prevText);
-      if ('error' in richResult) return { ok: false, status: 422, error: result.error };
+      if ('error' in richResult) return refusal;
       splices.push(...richResult);
     } else {
       splices.push(result);

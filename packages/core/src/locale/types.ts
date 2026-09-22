@@ -223,6 +223,9 @@ export type Locale = {
     untracedTitle: string;
     untracedHint: string;
     sharedInstancesHint: string;
+    dynamicTextHint: string;
+    dynamicTextSharedHint: string;
+    textEditRefused: string;
     rotateHandle: string;
     resizeHandle: string;
     arrangeSection: string;

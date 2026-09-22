@@ -104,6 +104,7 @@ export function InspectorPanel({
     inlineSelection,
     startInlineEdit,
     stopInlineEdit,
+    textRefusal,
     applyInlineStyle,
     slideId,
     selected,
@@ -188,6 +189,7 @@ export function InspectorPanel({
     : null;
   const contentRange =
     !inlineEdit &&
+    !textRefusal &&
     snapshot &&
     snapshot.text !== null &&
     contentSelection &&
@@ -357,11 +359,24 @@ export function InspectorPanel({
                       variant="outline"
                       size="sm"
                       className="w-full"
+                      disabled={!!textRefusal}
                       onClick={() => startInlineEdit(selected)}
                     >
                       <PencilLine data-icon="inline-start" />
                       {t.inspector.editText}
                     </Button>
+                    {textRefusal && (
+                      <p
+                        data-text-refusal={textRefusal.code}
+                        className="text-[11px] leading-relaxed text-muted-foreground"
+                      >
+                        {Math.max(instances, textRefusal.callSites) > 1
+                          ? format(t.inspector.dynamicTextSharedHint, {
+                              count: Math.max(instances, textRefusal.callSites),
+                            })
+                          : t.inspector.dynamicTextHint}
+                      </p>
+                    )}
                     {selectedInlineRange && selectedInlineRange.end > selectedInlineRange.start && (
                       <p className="text-[11px] leading-relaxed text-muted-foreground">
                         {t.inspector.textSelectionHint}
@@ -447,6 +462,7 @@ export function InspectorPanel({
                   <Disclosure title={t.inspector.contentSection}>
                     <div className="px-3.5 pb-3.5">
                       <ContentField
+                        readOnly={!!textRefusal}
                         snapshot={snapshot}
                         apply={apply}
                         onFocus={stopInlineEdit}
@@ -532,11 +548,13 @@ function stylePreviewFromOps(ops: Array<Extract<EditOp, { kind: 'set-style' }>>)
 }
 
 function ContentField({
+  readOnly,
   snapshot,
   apply,
   onFocus,
   onSelectionChange,
 }: {
+  readOnly: boolean;
   snapshot: ElementSnapshot;
   apply: (ops: EditOp[]) => void;
   onFocus: () => void;
@@ -562,6 +580,7 @@ function ContentField({
   return (
     <Textarea
       aria-label={t.inspector.elementTextPlaceholder}
+      readOnly={readOnly}
       onFocus={onFocus}
       value={local}
       onCompositionStart={() => {

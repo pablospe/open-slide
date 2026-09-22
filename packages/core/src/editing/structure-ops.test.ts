@@ -1,7 +1,9 @@
+import type { JSXElement } from '@babel/types';
 import { describe, expect, it } from 'vitest';
-import { parseSource } from './babel-walk.ts';
+import { parseSource, walkJsx } from './babel-walk.ts';
 import { applyEditBatch } from './batch-edit.ts';
 import { applyEdit, type EditOp } from './edit-ops.ts';
+import { componentRenderCount } from './structure-ops.ts';
 
 const lines = (...rows: string[]) => rows.join('\n');
 
@@ -358,5 +360,38 @@ describe('applyEditBatch with structural ops', () => {
     const root = locate(deck, '<div style');
     const { results } = applyEditBatch(deck, [{ ...root, ops: [{ kind: 'remove-element' }] }]);
     expect(results[0]).toMatchObject({ ok: false, code: 'root' });
+  });
+});
+
+describe('componentRenderCount', () => {
+  function countAt(source: string, needle: string): number {
+    const ast = parseSource(source);
+    if (!ast) throw new Error('parse failed');
+    const offset = source.indexOf(needle);
+    let found: JSXElement | null = null;
+    walkJsx(ast, (node) => {
+      if (node.type === 'JSXElement' && node.start === offset) found = node;
+    });
+    if (!found) throw new Error(`missing ${needle}`);
+    return componentRenderCount(ast, found);
+  }
+
+  it('multiplies through nested components and counts page-level elements once', () => {
+    const src = lines(
+      'const Footer = () => <footer>f</footer>;',
+      'const Master = () => <main><Footer /></main>;',
+      'export default [() => <Master />, () => <Master />, () => <p>page</p>];',
+    );
+    expect(countAt(src, '<footer>')).toBe(2);
+    expect(countAt(src, '<main>')).toBe(2);
+    expect(countAt(src, '<p>')).toBe(1);
+  });
+
+  it('stops at a component that renders itself', () => {
+    const src = lines(
+      'const Tree = ({ n }: { n: number }) => <ul>{n > 0 && <Tree n={n - 1} />}</ul>;',
+      'export default [() => <Tree n={2} />];',
+    );
+    expect(countAt(src, '<ul>')).toBe(2);
   });
 });
