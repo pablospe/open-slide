@@ -845,7 +845,7 @@ export function Slide() {
                       actions={thumbnailActions}
                     />
                   </div>
-                  <InspectorPanel />
+                  <InspectorPanel design={slide.design} />
                   <DesignPanel open={designOpen} onClose={() => setDesignOpen(false)} />
                 </div>
                 {import.meta.env.DEV && (

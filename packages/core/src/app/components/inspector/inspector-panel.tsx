@@ -28,14 +28,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Toggle } from '@/components/ui/toggle';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { type DesignPalette, paletteTokenVar } from '@/lib/design';
+import { type DesignPalette, type DesignSystem, paletteTokenVar } from '@/lib/design';
 import { findSlideSource } from '@/lib/inspector/fiber';
 import { hasOnlyInlineTextChildren } from '@/lib/inspector/inline-text';
 import type { EditOp } from '@/lib/inspector/use-editor';
 import { useAgentSocketConnected } from '@/lib/use-agent-socket';
-import { useLocale } from '@/lib/use-locale';
+import { format, useLocale } from '@/lib/use-locale';
 import { cn, round2 } from '@/lib/utils';
-import { format } from '../../../locale/format';
 import type { Locale } from '../../../locale/types';
 import { useDesignPanelState } from '../style-panel/design-provider';
 import { AssetPickerDialog } from './asset-picker-dialog';
@@ -75,7 +74,7 @@ function resolveSelectedTarget(target: SelectedTarget, slideId: string): Selecte
   return { line: hit.line, column: hit.column, anchor: hit.anchor };
 }
 
-export function InspectorPanel() {
+export function InspectorPanel({ design }: { design?: DesignSystem }) {
   const {
     active,
     slideId,
@@ -88,7 +87,7 @@ export function InspectorPanel() {
     add,
     applyEdit,
   } = useInspector();
-  const { exists: hasDesign, draft: design } = useDesignPanelState();
+  const designPanel = useDesignPanelState();
   const [snapshot, setSnapshot] = useState<ElementSnapshot | null>(null);
   const [contentSelection, setContentSelection] = useState<ContentSelection | null>(null);
   const [rangeStylePreview, setRangeStylePreview] = useState<RangeStylePreview | null>(null);
@@ -176,7 +175,12 @@ export function InspectorPanel() {
 
   if (!pinned) return null;
   const { s: pinSelected, n: pinSnapshot } = pinned;
-  const palette = hasDesign ? (design?.palette ?? null) : null;
+  // Only an exported `design` reaches the canvas as `--osd-*` vars.
+  const palette = design
+    ? designPanel.dirty && designPanel.draft
+      ? designPanel.draft.palette
+      : design.palette
+    : null;
   const contentRange =
     pinSnapshot.text !== null && contentSelection && contentSelection.end > contentSelection.start
       ? contentSelection

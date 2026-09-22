@@ -37,6 +37,9 @@ test.describe('inspector editing', () => {
     if (prepend) {
       const file = slideSourcePath(slideId);
       await fs.writeFile(file, prepend + (await fs.readFile(file, 'utf8')));
+      await expect
+        .poll(async () => (await request.get(`/@fs${file}`)).text(), { timeout: 15_000 })
+        .toContain('export const design');
     }
     await openSlide(page, slideId);
   }
