@@ -428,6 +428,11 @@ export const en: Locale = {
   thumbnailRail: {
     pages: 'Pages',
     goToPageAria: 'Go to page {n}',
+    addPage: 'Add page',
+    addPageAfter: 'Add page after',
+    addPageAtEnd: 'Add a blank page at the end',
+    toastAdded: 'Added page {n}',
+    toastAddFailed: 'Could not add page',
     duplicatePage: 'Duplicate',
     deletePage: 'Delete',
     pageActionsAria: 'Page {n} actions',
