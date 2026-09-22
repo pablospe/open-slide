@@ -150,7 +150,8 @@ function collectDomTextPartsRaw(
       const preserveWhitespace = preservesWhitespace(
         child.parentElement ? whiteSpace(child.parentElement) : '',
       );
-      const current = preserveWhitespace ? child.data : child.data.replace(/\s+/g, ' ');
+      // Not `\s`: CSS keeps NBSP and U+3000, and the server matches on the same set.
+      const current = preserveWhitespace ? child.data : child.data.replace(/[ \t\n\r\f]+/g, ' ');
       if (current) out.push({ node: child, current, preserveWhitespace });
     } else if (child instanceof HTMLBRElement) {
       out.push({ node: child, current: '\n' });
@@ -164,8 +165,8 @@ function normalizeDomTextParts(parts: DomTextPart[]): DomTextPart[] {
   return parts.flatMap((part, index) => {
     if (part.preserveWhitespace || part.current === '\n') return [part];
     let current = part.current;
-    if (parts[index - 1]?.current === '\n') current = current.replace(/^\s+/, '');
-    if (parts[index + 1]?.current === '\n') current = current.replace(/\s+$/, '');
+    if (parts[index - 1]?.current === '\n') current = current.replace(/^[ \t\n\r\f]+/, '');
+    if (parts[index + 1]?.current === '\n') current = current.replace(/[ \t\n\r\f]+$/, '');
     return current ? [{ ...part, current }] : [];
   });
 }

@@ -56,7 +56,7 @@ function collapsedTextSlice(node: Text, value: string): string {
   if (whiteSpace === 'pre' || whiteSpace === 'pre-wrap' || whiteSpace === 'break-spaces') {
     return value;
   }
-  return value.replace(/\s+/g, ' ');
+  return value.replace(/[ \t\n\r\f]+/g, ' ');
 }
 
 export function styleContext(

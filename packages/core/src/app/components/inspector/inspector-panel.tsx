@@ -50,7 +50,7 @@ import type { Locale } from '../../../locale/types';
 import { useDesignPanelState } from '../style-panel/design-provider';
 import { ArrangePanel, StructureSection } from './arrange-panel';
 import { AssetPickerDialog } from './asset-picker-dialog';
-import { type SelectedTarget, useInspector } from './inspector-provider';
+import { readEditableText, type SelectedTarget, useInspector } from './inspector-provider';
 import { InspectorEmptyState, SourceLocationBar } from './source-location-bar';
 
 type ElementSnapshot = {
@@ -1201,41 +1201,6 @@ function readTypography(el: HTMLElement) {
     fontStyle: cs.fontStyle === 'italic' ? ('italic' as const) : ('normal' as const),
     color: rgbToHex(cs.color) ?? '#000000',
   };
-}
-
-function readEditableText(el: HTMLElement): string {
-  const parts: string[] = [];
-  for (const child of Array.from(el.childNodes)) {
-    if (child.nodeType === Node.TEXT_NODE) {
-      parts.push(renderedTextNodeValue(child as Text));
-    } else if (child instanceof HTMLBRElement) {
-      parts.push('\n');
-    } else if (child instanceof HTMLElement) {
-      parts.push(readEditableText(child));
-    }
-  }
-  return normalizeRenderedText(parts);
-}
-
-function normalizeRenderedText(parts: string[]): string {
-  return parts
-    .map((part, index) => {
-      if (part === '\n') return part;
-      let next = part;
-      if (parts[index - 1] === '\n') next = next.replace(/^\s+/, '');
-      if (parts[index + 1] === '\n') next = next.replace(/\s+$/, '');
-      return next;
-    })
-    .join('');
-}
-
-function renderedTextNodeValue(node: Text): string {
-  const value = node.textContent ?? '';
-  const whiteSpace = node.parentElement ? getComputedStyle(node.parentElement).whiteSpace : '';
-  if (whiteSpace === 'pre' || whiteSpace === 'pre-wrap' || whiteSpace === 'break-spaces') {
-    return value;
-  }
-  return value.replace(/\s+/g, ' ');
 }
 
 function rgbToHex(value: string): string | null {

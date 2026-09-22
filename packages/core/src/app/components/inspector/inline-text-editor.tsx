@@ -257,6 +257,7 @@ function ActiveInlineEditor({
   const initialCaretRef = useRef({ point: target.point, selectWord: target.selectWord ?? false });
 
   useEffect(() => {
+    previousTextRef.current = readEditableText(anchor);
     anchor.setAttribute('contenteditable', 'true');
     anchor.setAttribute('spellcheck', 'false');
     anchor.setAttribute('data-slide-editing', 'true');
@@ -268,6 +269,7 @@ function ActiveInlineEditor({
     const onBeforeInput = (e: Event) => {
       const ev = e as InputEvent;
       if (ev.isComposing) return;
+      previousTextRef.current = readEditableText(anchor);
       const type = ev.inputType;
       if (type === 'historyUndo' || type === 'historyRedo') {
         ev.preventDefault();
@@ -292,6 +294,9 @@ function ActiveInlineEditor({
     const onInput = (e: Event) => {
       if ((e as InputEvent).isComposing) return;
       latestRef.current.commit();
+    };
+    const onCompositionStart = () => {
+      previousTextRef.current = readEditableText(anchor);
     };
     const onCompositionEnd = () => latestRef.current.commit();
     const onKeyDown = (e: KeyboardEvent) => {
@@ -323,6 +328,7 @@ function ActiveInlineEditor({
 
     anchor.addEventListener('beforeinput', onBeforeInput);
     anchor.addEventListener('input', onInput);
+    anchor.addEventListener('compositionstart', onCompositionStart);
     anchor.addEventListener('compositionend', onCompositionEnd);
     anchor.addEventListener('keydown', onKeyDown);
     document.addEventListener('selectionchange', onSelectionChange);
@@ -330,6 +336,7 @@ function ActiveInlineEditor({
     return () => {
       anchor.removeEventListener('beforeinput', onBeforeInput);
       anchor.removeEventListener('input', onInput);
+      anchor.removeEventListener('compositionstart', onCompositionStart);
       anchor.removeEventListener('compositionend', onCompositionEnd);
       anchor.removeEventListener('keydown', onKeyDown);
       document.removeEventListener('selectionchange', onSelectionChange);
