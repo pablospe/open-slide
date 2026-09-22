@@ -50,6 +50,7 @@ import type { Locale } from '../../../locale/types';
 import { useDesignPanelState } from '../style-panel/design-provider';
 import { ArrangePanel, StructureSection } from './arrange-panel';
 import { AssetPickerDialog } from './asset-picker-dialog';
+import { InsertSection } from './insert-panel';
 import { readEditableText, type SelectedTarget, useInspector } from './inspector-provider';
 import { InspectorEmptyState, SourceLocationBar } from './source-location-bar';
 
@@ -458,6 +459,8 @@ export function InspectorPanel({
             <TabsContent value="arrange">
               <ArrangePanel />
               <StructureSection />
+              <Separator />
+              <InsertSection design={design} />
             </TabsContent>
             {!multiple && (
               <div className="mt-auto">
@@ -478,7 +481,11 @@ export function InspectorPanel({
             )}
           </>
         ) : (
-          <InspectorEmptyState slideId={slideId} status={status} />
+          <>
+            <InspectorEmptyState slideId={slideId} status={status} />
+            <Separator />
+            <InsertSection design={design} />
+          </>
         )}
       </PanelShell>
     </Tabs>

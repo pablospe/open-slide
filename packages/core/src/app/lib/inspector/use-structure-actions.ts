@@ -23,7 +23,7 @@ type Options = {
   onApplied: () => void;
 };
 
-function inspectorRoot(): HTMLElement | null {
+export function inspectorRoot(): HTMLElement | null {
   return document.querySelector<HTMLElement>('[data-inspector-root]');
 }
 
@@ -32,7 +32,7 @@ function inspectorRoot(): HTMLElement | null {
 // element's new loc is the old loc of its sibling, which is already in the
 // DOM before the update lands. Only structure and loc mutations count, since
 // animated decks mutate inline styles continuously.
-function waitForSlideUpdate(slideId: string): { ready: Promise<void>; cancel: () => void } {
+export function waitForSlideUpdate(slideId: string): { ready: Promise<void>; cancel: () => void } {
   let cancel = () => {};
   const ready = new Promise<void>((resolve) => {
     const hot = import.meta.hot;

@@ -271,6 +271,19 @@ export type Locale = {
     sharedLayoutHint: string;
     inlineLayoutHint: string;
     layerLayoutHint: string;
+    insertSection: string;
+    insertAfterSelection: string;
+    insertAtPageEnd: string;
+    insertFailed: string;
+    insertSnippet: string;
+    insertSnippets: {
+      heading: string;
+      paragraph: string;
+      bulletList: string;
+      box: string;
+      image: string;
+      twoColumn: string;
+    };
     structureSection: string;
     deleteElement: string;
     duplicateElement: string;
@@ -291,6 +304,10 @@ export type Locale = {
       comment: string;
       noSibling: string;
       siblingNotElement: string;
+      unknownSnippet: string;
+      assetRequired: string;
+      pageNotFound: string;
+      pageRoot: string;
     };
     inspect: string;
     deselect: string;
