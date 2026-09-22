@@ -335,7 +335,12 @@ export function InspectorPanel({
                   </TabsTrigger>
                 </TabsList>
               </div>
-              <SourceLocationBar slideId={slideId} selection={selection} status={status} />
+              <SourceLocationBar
+                slideId={slideId}
+                selected={selected}
+                selection={selection}
+                status={status}
+              />
             </>
           ) : undefined
         }

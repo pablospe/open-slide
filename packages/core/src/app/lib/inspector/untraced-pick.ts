@@ -1,12 +1,14 @@
 import { useSyncExternalStore } from 'react';
 
-export type UntracedPick = { slideId: string; tagName: string };
+// Keyed on the clicked element so a page change or HMR remount, which
+// detaches it, retires the pick without any explicit reset.
+export type UntracedPick = { slideId: string; element: Element };
 
 let current: UntracedPick | null = null;
 const listeners = new Set<() => void>();
 
 export function setUntracedPick(next: UntracedPick | null) {
-  if (current?.slideId === next?.slideId && current?.tagName === next?.tagName) return;
+  if (current?.element === next?.element) return;
   current = next;
   for (const listener of listeners) listener();
 }
@@ -24,5 +26,6 @@ function snapshot() {
 
 export function useUntracedPick(slideId: string): string | null {
   const pick = useSyncExternalStore(subscribe, snapshot, snapshot);
-  return pick?.slideId === slideId ? pick.tagName : null;
+  if (pick?.slideId !== slideId || !pick.element.isConnected) return null;
+  return pick.element.tagName.toLowerCase();
 }

@@ -218,7 +218,7 @@ export function InspectOverlay() {
       if (!handle) {
         const picked = hit || event.shiftKey ? null : pickElement(event.clientX, event.clientY);
         const untraced = picked?.parentElement?.closest('[data-osd-canvas]') ? picked : null;
-        setUntracedPick(untraced ? { slideId, tagName: untraced.tagName.toLowerCase() } : null);
+        setUntracedPick(untraced ? { slideId, element: untraced } : null);
       }
       if (hit && !handle && !event.metaKey && !event.ctrlKey) {
         const hitAnchor = hit.anchor;
@@ -425,6 +425,7 @@ export function InspectOverlay() {
       update(event);
       for (const snapshot of gesture.snapshots) restoreTransform(snapshot);
       if (gesture.moved && gesture.edits.length) bufferBatch(gesture.edits);
+      if (gesture.moved) setUntracedPick(null);
       setSelection(gesture.moved ? gesture.targets : gesture.clickSelection);
       clearGesture(false);
     };

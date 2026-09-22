@@ -23,17 +23,17 @@ async function copyText(text: string, success: string, failure: string) {
 
 export function SourceLocationBar({
   slideId,
+  selected,
   selection,
   status,
 }: {
   slideId: string;
+  selected: SelectedTarget;
   selection: SelectedTarget[];
   status: InspectorStatus;
 }) {
   const t = useLocale();
-  const first = selection[0];
-  if (!first) return null;
-  const location = formatSourceLocation(slideId, first, config.slidesDir);
+  const location = formatSourceLocation(slideId, selected, config.slidesDir);
   const more = selection.length - 1;
   const copyLocation = () =>
     copyText(location, t.inspector.sourceLocationCopied, t.inspector.clipboardFailed);
@@ -41,7 +41,10 @@ export function SourceLocationBar({
     copyText(
       formatAgentSnippet(
         slideId,
-        selection.map((target) => ({ ...target, ...summarizeElement(target.anchor) })),
+        [selected, ...selection.filter((target) => target !== selected)].map((target) => ({
+          ...target,
+          ...summarizeElement(target.anchor),
+        })),
         config.slidesDir,
       ),
       t.inspector.agentSnippetCopied,
