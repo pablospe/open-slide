@@ -1,22 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import type { SelectedTarget } from '@/components/inspector/inspector-provider';
-import { isTypingTarget } from '@/lib/keys';
 import { useLocale } from '@/lib/use-locale';
 import { findSlideSource } from './fiber';
-import {
-  refusalMessage,
-  STRUCTURE_ACTIONS,
-  type StructureActionId,
-  structureActionForEvent,
-} from './structure-actions';
+import { refusalMessage, STRUCTURE_OPS, type StructureActionId } from './structure-actions';
 import { StructureEditError, useEditor } from './use-editor';
 
 type Options = {
-  active: boolean;
-  inlineEditing: boolean;
   committing: boolean;
-  pendingCount: number;
   slideId: string;
   selection: SelectedTarget[];
   setSelection: (targets: SelectedTarget[]) => void;
@@ -77,10 +68,7 @@ function waitForSlideUpdate(slideId: string): { ready: Promise<void>; cancel: ()
 }
 
 export function useStructureActions({
-  active,
-  inlineEditing,
   committing,
-  pendingCount,
   slideId,
   selection,
   setSelection,
@@ -91,25 +79,11 @@ export function useStructureActions({
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
 
-  const blockedReason = useMemo(() => {
-    if (selection.length !== 1) return t.structureSingleOnly;
-    if (pendingCount > 0) return t.structurePendingEdits;
-    const target = selection[0];
-    if (target.anchor.dataset.slideLoc !== `${target.line}:${target.column}`)
-      return t.structureExternal;
-    return null;
-  }, [selection, pendingCount, t]);
-
   const run = useCallback(
     async (id: StructureActionId) => {
       if (busyRef.current || committing) return;
-      if (blockedReason) {
-        toast.error(blockedReason);
-        return;
-      }
-      const action = STRUCTURE_ACTIONS.find((candidate) => candidate.id === id);
       const target = selection[0];
-      if (!action || !target) return;
+      if (!target) return;
       const loc = `${target.line}:${target.column}`;
       const instanceCount =
         inspectorRoot()?.querySelectorAll(`[data-slide-loc="${loc}"]`).length ?? 1;
@@ -120,7 +94,7 @@ export function useStructureActions({
         const { changed, location } = await applyStructureEdit(
           target.line,
           target.column,
-          action.op(instanceCount),
+          STRUCTURE_OPS[id](instanceCount),
         );
         onApplied();
         if (id === 'delete' || !location) {
@@ -146,37 +120,8 @@ export function useStructureActions({
         setBusy(false);
       }
     },
-    [applyStructureEdit, blockedReason, committing, onApplied, selection, setSelection, slideId, t],
+    [applyStructureEdit, committing, onApplied, selection, setSelection, slideId, t],
   );
 
-  useEffect(() => {
-    if (!active || inlineEditing || committing || selection.length === 0) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (
-        event.defaultPrevented ||
-        event.isComposing ||
-        event.keyCode === 229 ||
-        event.repeat ||
-        isTypingTarget(event.target) ||
-        document.querySelector('[data-visual-gesture]')
-      )
-        return;
-      const target = event.target;
-      if (
-        target instanceof Element &&
-        (target.closest('[role="dialog"], [role="menu"], [role="listbox"]') ||
-          target.closest('[data-inspector-ui]'))
-      )
-        return;
-      const action = structureActionForEvent(event);
-      if (!action) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      void run(action.id);
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
-  }, [active, inlineEditing, committing, selection.length, run]);
-
-  return useMemo(() => ({ run, busy, blockedReason }), [run, busy, blockedReason]);
+  return useMemo(() => ({ run, busy }), [run, busy]);
 }

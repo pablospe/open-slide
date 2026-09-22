@@ -30,6 +30,7 @@ import { toast } from 'sonner';
 import { AssetView } from '@/components/asset-view';
 import { HistoryProvider } from '@/components/history-provider';
 import { CommentWidget } from '@/components/inspector/comment-widget';
+import { EditorContextMenu } from '@/components/inspector/editor-context-menu';
 import { InlineEditLayer } from '@/components/inspector/inline-text-editor';
 import { InspectOverlay } from '@/components/inspector/inspect-overlay';
 import {
@@ -286,6 +287,11 @@ export function Slide() {
       }
     },
     [pages, slideId, setSearchParams, t.thumbnailRail],
+  );
+
+  const addPageHere = useMemo(
+    () => (import.meta.env.DEV ? () => void addPage(index) : undefined),
+    [addPage, index],
   );
 
   const duplicatePage = useCallback(
@@ -881,11 +887,16 @@ export function Slide() {
                     moduleTransition={slide.transition}
                     onOverview={() => setOverviewOpen(true)}
                   />
-                  <main
-                    ref={slideViewportRef}
-                    data-inspector-root
-                    data-slide-id={slideId}
-                    className="relative min-h-0 min-w-0 flex-1 bg-background p-2 md:mx-2 md:mb-2 md:rounded-[10px] md:p-10 md:shadow-edge md:ring-1 md:ring-foreground/[0.06]"
+                  <EditorContextMenu
+                    onAddPage={addPageHere}
+                    render={
+                      <main
+                        ref={slideViewportRef}
+                        data-inspector-root
+                        data-slide-id={slideId}
+                        className="relative min-h-0 min-w-0 flex-1 bg-background p-2 md:mx-2 md:mb-2 md:rounded-[10px] md:p-10 md:shadow-edge md:ring-1 md:ring-foreground/[0.06]"
+                      />
+                    }
                   >
                     <SlideViewportNavigation
                       targetRef={slideViewportRef}
@@ -907,7 +918,7 @@ export function Slide() {
                     <InlineEditLayer />
                     <SaveBar />
                     {import.meta.env.DEV && <CommentWidget />}
-                  </main>
+                  </EditorContextMenu>
                   {/* Mobile-only horizontal rail. Sits below the canvas and
                     pads its bottom for the iOS home indicator / Safari URL bar. */}
                   <div
@@ -973,6 +984,7 @@ export function Slide() {
                 onExportPptx: exportPptx,
                 onExportImagePptx: exportImagePptx,
                 onGoToPage: goTo,
+                onAddPage: addPageHere,
               }}
             />
           )}

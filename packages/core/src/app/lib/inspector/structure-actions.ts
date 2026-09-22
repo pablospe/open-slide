@@ -14,50 +14,12 @@ export type StructureRefusal =
   | 'no-sibling'
   | 'sibling-not-element';
 
-type ShortcutEvent = Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'altKey' | 'shiftKey'>;
-
-export type StructureAction = {
-  id: StructureActionId;
-  label: keyof Locale['inspector'] &
-    ('deleteElement' | 'duplicateElement' | 'moveElementEarlier' | 'moveElementLater');
-  op: (instanceCount: number) => EditOp;
-  matches: (event: ShortcutEvent) => boolean;
+export const STRUCTURE_OPS: Record<StructureActionId, (instanceCount: number) => EditOp> = {
+  moveEarlier: (instanceCount) => ({ kind: 'move-element', direction: 'earlier', instanceCount }),
+  moveLater: (instanceCount) => ({ kind: 'move-element', direction: 'later', instanceCount }),
+  duplicate: (instanceCount) => ({ kind: 'duplicate-element', instanceCount }),
+  delete: (instanceCount) => ({ kind: 'remove-element', instanceCount }),
 };
-
-const plain = (event: ShortcutEvent) =>
-  !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
-
-export const STRUCTURE_ACTIONS: readonly StructureAction[] = [
-  {
-    id: 'moveEarlier',
-    label: 'moveElementEarlier',
-    op: (instanceCount) => ({ kind: 'move-element', direction: 'earlier', instanceCount }),
-    matches: (e) => e.key === 'ArrowUp' && e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey,
-  },
-  {
-    id: 'moveLater',
-    label: 'moveElementLater',
-    op: (instanceCount) => ({ kind: 'move-element', direction: 'later', instanceCount }),
-    matches: (e) => e.key === 'ArrowDown' && e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey,
-  },
-  {
-    id: 'duplicate',
-    label: 'duplicateElement',
-    op: (instanceCount) => ({ kind: 'duplicate-element', instanceCount }),
-    matches: (e) =>
-      e.key.toLowerCase() === 'd' && (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey,
-  },
-  {
-    id: 'delete',
-    label: 'deleteElement',
-    op: (instanceCount) => ({ kind: 'remove-element', instanceCount }),
-    matches: (e) => (e.key === 'Delete' || e.key === 'Backspace') && plain(e),
-  },
-];
-
-export function structureActionForEvent(event: ShortcutEvent): StructureAction | null {
-  return STRUCTURE_ACTIONS.find((action) => action.matches(event)) ?? null;
-}
 
 const REFUSAL_LABELS: Record<StructureRefusal, keyof Locale['inspector']['structureRefusals']> = {
   'not-found': 'notFound',

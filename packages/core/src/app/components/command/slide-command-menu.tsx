@@ -14,8 +14,11 @@ import {
   RectangleHorizontal,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useInspector } from '@/components/inspector/inspector-provider';
+import { EDITOR_ACTIONS, formatShortcut } from '@/lib/inspector/editor-actions';
+import { useEditorActions } from '@/lib/inspector/use-editor-actions';
 import { format, useLocale } from '@/lib/use-locale';
-import { type CommandGroupSpec, CommandMenu, type CommandSpec } from './command-menu';
+import { type CommandGroupSpec, CommandMenu, type CommandSpec, IS_APPLE } from './command-menu';
 
 const { showSlideBrowser, allowHtmlDownload } = config.build;
 
@@ -31,7 +34,33 @@ export type SlideCommandHandlers = {
   onExportPptx: () => void;
   onExportImagePptx: () => void;
   onGoToPage: (index: number) => void;
+  onAddPage?: () => void;
 };
+
+function useEditorCommands(open: boolean, onAddPage?: () => void): CommandSpec[] {
+  const { active } = useInspector();
+  const { inspector: t } = useLocale();
+  const { readState, run } = useEditorActions({ onAddPage });
+  if (!open || !active) return [];
+  const state = readState();
+  return EDITOR_ACTIONS.filter((action) => action.menu !== false).flatMap((action) => {
+    const status = action.enabled(state);
+    if (!status.enabled && status.reason === 'actionNeedsSelection') return [];
+    const Icon = action.icon;
+    return [
+      {
+        id: `editor-${action.id}`,
+        label: t[action.label],
+        icon: <Icon />,
+        keywords: ['editor', 'element', action.id, action.group],
+        shortcut: action.shortcut && formatShortcut(action.shortcut, IS_APPLE),
+        disabled: !status.enabled,
+        hint: status.enabled ? undefined : t[status.reason],
+        run: () => void run(action.id),
+      },
+    ];
+  });
+}
 
 export function SlideCommandMenu({
   open,
@@ -50,6 +79,7 @@ export function SlideCommandMenu({
 }) {
   const t = useLocale();
   const navigate = useNavigate();
+  const editor = useEditorCommands(open, handlers.onAddPage);
 
   const groups: CommandGroupSpec[] = (() => {
     const present: CommandSpec[] = [
@@ -163,6 +193,7 @@ export function SlideCommandMenu({
     }));
 
     return [
+      { id: 'editor', heading: t.commandMenu.groupEditor, items: editor },
       { id: 'present', heading: t.commandMenu.groupPresent, items: present },
       { id: 'deck', heading: t.commandMenu.groupDeck, items: deck },
       { id: 'export', heading: t.commandMenu.groupExport, items: exports },

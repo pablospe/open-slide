@@ -26,6 +26,8 @@ export type CommandSpec = {
   keywords?: string[];
   shortcut?: string;
   disabled?: boolean;
+  /** Shown under the label, e.g. why a disabled command can't run. */
+  hint?: string;
   active?: boolean;
   run: () => void | Promise<void>;
 };
@@ -104,7 +106,16 @@ export function CommandMenu({
                   onSelect={() => run(item)}
                 >
                   {item.icon}
-                  <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                  {item.hint ? (
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate">{item.label}</span>
+                      <span className="text-[10.5px] leading-snug text-muted-foreground">
+                        {item.hint}
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                  )}
                   {item.active && <Check className="ml-auto opacity-100 text-brand" aria-hidden />}
                   {item.shortcut && <CommandShortcut>{item.shortcut}</CommandShortcut>}
                 </CommandItem>
@@ -118,7 +129,7 @@ export function CommandMenu({
   );
 }
 
-const IS_APPLE =
+export const IS_APPLE =
   typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
 
 export const COMMAND_MENU_SHORTCUT = IS_APPLE ? '⌘K' : 'Ctrl K';

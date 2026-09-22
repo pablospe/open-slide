@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import type { SelectedTarget } from '@/components/inspector/inspector-provider';
-import { isTypingTarget } from '@/lib/keys';
 import { useLocale } from '@/lib/use-locale';
 import { type Alignment, alignRects, distributeRects, unionRects } from './geometry';
 import type { EditOp } from './use-editor';
@@ -136,8 +135,6 @@ function preserveLayerLayout(
 }
 
 type Options = {
-  active: boolean;
-  inlineEditing: boolean;
   committing: boolean;
   slideId: string;
   selection: SelectedTarget[];
@@ -146,8 +143,6 @@ type Options = {
 };
 
 export function useVisualEditor({
-  active,
-  inlineEditing,
   committing,
   slideId,
   selection,
@@ -406,50 +401,14 @@ export function useVisualEditor({
     setSelection(independentTargets(objects));
   }, [slideId, setSelection]);
 
-  useEffect(() => {
-    if (!active || inlineEditing || committing) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (
-        event.defaultPrevented ||
-        event.isComposing ||
-        event.keyCode === 229 ||
-        isTypingTarget(event.target) ||
-        document.querySelector('[data-visual-gesture]')
-      )
-        return;
-      const target = event.target;
-      if (
-        target instanceof Element &&
-        (target.closest('[role="dialog"], [role="menu"], [role="listbox"]') ||
-          target.closest('[data-inspector-ui]'))
-      )
-        return;
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a') {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        selectAll();
-        return;
-      }
-      if (!selection.length || event.metaKey || event.ctrlKey || event.altKey) return;
-      const vectors: Record<string, { x: number; y: number }> = {
-        ArrowLeft: { x: -1, y: 0 },
-        ArrowRight: { x: 1, y: 0 },
-        ArrowUp: { x: 0, y: -1 },
-        ArrowDown: { x: 0, y: 1 },
-      };
-      const vector = vectors[event.key];
-      if (!vector) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      const step = event.shiftKey ? 10 : 1;
+  const nudge = useCallback(
+    (vector: { x: number; y: number }, step: number) =>
       move(
         selection.map(() => ({ x: vector.x * step, y: vector.y * step })),
         `nudge:${selection.map((target) => `${target.line}:${target.column}`).join(',')}`,
-      );
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
-  }, [active, inlineEditing, committing, selection, move, selectAll]);
+      ),
+    [selection, move],
+  );
 
   return useMemo(
     () => ({
@@ -464,6 +423,7 @@ export function useVisualEditor({
       setFrame,
       arrange,
       clearLayout,
+      nudge,
       selectParent,
       selectAll,
     }),
@@ -476,6 +436,7 @@ export function useVisualEditor({
       setFrame,
       arrange,
       clearLayout,
+      nudge,
       selectParent,
       selectAll,
     ],
