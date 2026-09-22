@@ -1,6 +1,7 @@
 import * as t from '@babel/types';
 import { textDiff } from '../app/lib/text-diff.ts';
 import { findJsxAncestors, parseSource, walkAll, walkJsx } from './babel-walk.ts';
+import { isStepOp, planStepEdit, type StepOp, type StepRefusal } from './steps-ops.ts';
 import {
   isStructureOp,
   planStructureEdit,
@@ -8,6 +9,8 @@ import {
   type StructureOp,
   type StructureRefusal,
 } from './structure-ops.ts';
+
+export type EditRefusal = StructureRefusal | StepRefusal;
 
 export type EditOp =
   | { kind: 'set-style'; key: string; value: string | null; prevText?: string }
@@ -22,15 +25,22 @@ export type EditOp =
     }
   | { kind: 'set-attr-asset'; attr: string; assetPath: string }
   | { kind: 'replace-placeholder-with-image'; assetPath: string }
-  | StructureOp;
+  | StructureOp
+  | StepOp;
 
 export type ApplyEditResult =
   | { ok: true; source: string; location?: SourceLocation }
-  | { ok: false; status: number; error: string; code?: StructureRefusal };
+  | { ok: false; status: number; error: string; code?: EditRefusal };
 
 export type EditPlan =
   | { ok: true; splices: Splice[]; location?: SourceLocation }
-  | { ok: false; status: number; error: string; code?: StructureRefusal };
+  | { ok: false; status: number; error: string; code?: EditRefusal };
+
+// Structural and step ops rewrite whole element ranges, so each one is
+// planned and applied on its own.
+export function isStandaloneOp(op: { kind: string }): op is StructureOp | StepOp {
+  return isStructureOp(op) || isStepOp(op);
+}
 
 export type Splice = { from: number; to: number; text: string };
 
@@ -230,7 +240,7 @@ export function findElementForEdit(
 ): t.JSXElement | null {
   // Structural ops must never fall back to an enclosing element: removing the
   // parent of what was clicked is far worse than refusing.
-  if (ops.some(isStructureOp)) return findJsxByStart(ast, line, column);
+  if (ops.some(isStandaloneOp)) return findJsxByStart(ast, line, column);
   const element = findInnermostJsxElement(ast, line, column);
   const prevText = fallbackTextForOps(ops);
   if (prevText === null) return element;
@@ -1269,12 +1279,14 @@ export function planEdit(
 
   const ast = parseSource(source);
   if (!ast) return { ok: false, status: 422, error: 'could not parse source' };
-  const structureOp = ops.find(isStructureOp);
-  if (structureOp) {
+  const standaloneOp = ops.find(isStandaloneOp);
+  if (standaloneOp) {
     if (ops.length > 1) {
       return { ok: false, status: 400, error: 'a structural op must be the only op in its edit' };
     }
-    return planStructureEdit(ast, source, line, column, structureOp);
+    return isStepOp(standaloneOp)
+      ? planStepEdit(ast, source, line, column, standaloneOp)
+      : planStructureEdit(ast, source, line, column, standaloneOp as StructureOp);
   }
   const element = exactLocation
     ? findJsxByStart(ast, line, column)

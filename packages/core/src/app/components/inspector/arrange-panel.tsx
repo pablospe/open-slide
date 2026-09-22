@@ -422,7 +422,7 @@ export function StructureSection() {
   );
 }
 
-function ArrangeButton({
+export function ArrangeButton({
   label,
   icon: Icon,
   onClick,

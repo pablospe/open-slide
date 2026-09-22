@@ -901,6 +901,7 @@ export function Slide() {
                         total={pageCount}
                         moduleTransition={slide.transition}
                         disabled={prefersReducedMotion}
+                        stepPreview={import.meta.env.DEV}
                       />
                     </SlideCanvas>
                     <InspectOverlay />

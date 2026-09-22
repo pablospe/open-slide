@@ -51,6 +51,7 @@ import { useDesignPanelState } from '../style-panel/design-provider';
 import { ArrangePanel, StructureSection } from './arrange-panel';
 import { AssetPickerDialog } from './asset-picker-dialog';
 import { readEditableText, type SelectedTarget, useInspector } from './inspector-provider';
+import { RevealSection } from './reveal-section';
 import { InspectorEmptyState, SourceLocationBar } from './source-location-bar';
 
 type ElementSnapshot = {
@@ -458,6 +459,7 @@ export function InspectorPanel({
             <TabsContent value="arrange">
               <ArrangePanel />
               <StructureSection />
+              <RevealSection />
             </TabsContent>
             {!multiple && (
               <div className="mt-auto">

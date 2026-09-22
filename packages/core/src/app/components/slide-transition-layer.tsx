@@ -1,4 +1,12 @@
-import { type MutableRefObject, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import {
+  type MutableRefObject,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
+import { stepPreview, useStepPreview } from '../lib/inspector/step-preview';
 import { SlidePageProvider } from '../lib/page-context';
 import type { Page } from '../lib/sdk';
 import {
@@ -24,6 +32,8 @@ type Props = {
   stepControllerRef?: MutableRefObject<StepController | null>;
   entryDirection?: EntryDirection;
   onStepAggregateChange?: (aggregate: StepAggregate) => void;
+  // Editor canvas only: follow the Reveal panel's step preview.
+  stepPreview?: boolean;
 };
 
 type Direction = 'forward' | 'backward';
@@ -645,6 +655,7 @@ export function SlideTransitionLayer({
   stepControllerRef,
   entryDirection = 'jump',
   onStepAggregateChange,
+  stepPreview: previewEnabled = false,
 }: Props) {
   const [current, setCurrent] = useState(index);
   const [outgoing, setOutgoing] = useState<number | null>(null);
@@ -788,6 +799,18 @@ export function SlideTransitionLayer({
 
   const noopControllerRef = useRef<StepController | null>(null);
   const activeControllerRef = stepControllerRef ?? noopControllerRef;
+  const preview = useStepPreview();
+  const previewRevealed = previewEnabled ? (preview.revealed ?? undefined) : undefined;
+  useLayoutEffect(() => {
+    if (previewEnabled) stepPreview.setPage(current);
+  }, [previewEnabled, current]);
+  const onCurrentAggregateChange = useCallback(
+    (aggregate: StepAggregate) => {
+      if (previewEnabled) stepPreview.reportAggregate(aggregate);
+      onStepAggregateChange?.(aggregate);
+    },
+    [previewEnabled, onStepAggregateChange],
+  );
 
   return (
     <div
@@ -811,11 +834,17 @@ export function SlideTransitionLayer({
       {CurrentPage ? (
         <div ref={incomingLayerRef} className="absolute inset-0">
           <SlidePageProvider index={current} total={total}>
+            {/* <Steps> reads its uncontrolled reveal state once on mount, so
+                leaving the editor preview remounts the page to reveal everything. */}
             <StepHost
+              key={previewRevealed === undefined ? 'live' : 'preview'}
               isActivePage
               entryDirection={entryDirection}
               controllerRef={activeControllerRef}
-              onAggregateChange={onStepAggregateChange}
+              controlledRevealed={previewRevealed}
+              onAggregateChange={
+                previewEnabled || onStepAggregateChange ? onCurrentAggregateChange : undefined
+              }
             >
               <CurrentPage />
             </StepHost>

@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import type { SelectedTarget } from '@/components/inspector/inspector-provider';
 import { isTypingTarget } from '@/lib/keys';
 import { useLocale } from '@/lib/use-locale';
+import type { Locale } from '../../../locale/types';
 import { findSlideSource } from './fiber';
 import {
   refusalMessage,
@@ -23,7 +24,7 @@ type Options = {
   onApplied: () => void;
 };
 
-function inspectorRoot(): HTMLElement | null {
+export function inspectorRoot(): HTMLElement | null {
   return document.querySelector<HTMLElement>('[data-inspector-root]');
 }
 
@@ -32,7 +33,7 @@ function inspectorRoot(): HTMLElement | null {
 // element's new loc is the old loc of its sibling, which is already in the
 // DOM before the update lands. Only structure and loc mutations count, since
 // animated decks mutate inline styles continuously.
-function waitForSlideUpdate(slideId: string): { ready: Promise<void>; cancel: () => void } {
+export function waitForSlideUpdate(slideId: string): { ready: Promise<void>; cancel: () => void } {
   let cancel = () => {};
   const ready = new Promise<void>((resolve) => {
     const hot = import.meta.hot;
@@ -76,6 +77,34 @@ function waitForSlideUpdate(slideId: string): { ready: Promise<void>; cancel: ()
   return { ready, cancel };
 }
 
+export function sourceEditBlockedReason(
+  t: Locale['inspector'],
+  selection: SelectedTarget[],
+  pendingCount: number,
+): string | null {
+  if (selection.length !== 1) return t.structureSingleOnly;
+  if (pendingCount > 0) return t.structurePendingEdits;
+  const target = selection[0];
+  if (target.anchor.dataset.slideLoc !== `${target.line}:${target.column}`)
+    return t.structureExternal;
+  return null;
+}
+
+export function instanceCountOf(target: SelectedTarget): number {
+  const loc = `${target.line}:${target.column}`;
+  return inspectorRoot()?.querySelectorAll(`[data-slide-loc="${loc}"]`).length ?? 1;
+}
+
+export function selectAtLocation(
+  location: { line: number; column: number },
+  slideId: string,
+): SelectedTarget | null {
+  const anchor = inspectorRoot()?.querySelector<HTMLElement>(
+    `[data-slide-loc="${location.line}:${location.column}"]`,
+  );
+  return anchor ? findSlideSource(anchor, slideId, { hostOnly: true }) : null;
+}
+
 export function useStructureActions({
   active,
   inlineEditing,
@@ -91,14 +120,10 @@ export function useStructureActions({
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
 
-  const blockedReason = useMemo(() => {
-    if (selection.length !== 1) return t.structureSingleOnly;
-    if (pendingCount > 0) return t.structurePendingEdits;
-    const target = selection[0];
-    if (target.anchor.dataset.slideLoc !== `${target.line}:${target.column}`)
-      return t.structureExternal;
-    return null;
-  }, [selection, pendingCount, t]);
+  const blockedReason = useMemo(
+    () => sourceEditBlockedReason(t, selection, pendingCount),
+    [selection, pendingCount, t],
+  );
 
   const run = useCallback(
     async (id: StructureActionId) => {
@@ -110,9 +135,7 @@ export function useStructureActions({
       const action = STRUCTURE_ACTIONS.find((candidate) => candidate.id === id);
       const target = selection[0];
       if (!action || !target) return;
-      const loc = `${target.line}:${target.column}`;
-      const instanceCount =
-        inspectorRoot()?.querySelectorAll(`[data-slide-loc="${loc}"]`).length ?? 1;
+      const instanceCount = instanceCountOf(target);
       busyRef.current = true;
       setBusy(true);
       const update = waitForSlideUpdate(slideId);
@@ -130,10 +153,7 @@ export function useStructureActions({
         }
         if (changed) await update.ready;
         else update.cancel();
-        const anchor = inspectorRoot()?.querySelector<HTMLElement>(
-          `[data-slide-loc="${location.line}:${location.column}"]`,
-        );
-        const hit = anchor ? findSlideSource(anchor, slideId, { hostOnly: true }) : null;
+        const hit = selectAtLocation(location, slideId);
         setSelection(hit ? [hit] : []);
       } catch (err) {
         update.cancel();

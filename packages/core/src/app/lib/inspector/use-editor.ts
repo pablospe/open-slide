@@ -15,7 +15,11 @@ export type EditOp =
   | { kind: 'replace-placeholder-with-image'; assetPath: string }
   | { kind: 'remove-element'; instanceCount?: number }
   | { kind: 'duplicate-element'; instanceCount?: number }
-  | { kind: 'move-element'; direction: 'earlier' | 'later'; instanceCount?: number };
+  | { kind: 'move-element'; direction: 'earlier' | 'later'; instanceCount?: number }
+  | { kind: 'wrap-in-step'; instanceCount?: number }
+  | { kind: 'unwrap-step'; instanceCount?: number }
+  | { kind: 'move-step'; direction: 'earlier' | 'later'; instanceCount?: number }
+  | { kind: 'set-step-duration'; value: number | null; instanceCount?: number };
 
 export type Edit = { line: number; column: number; ops: EditOp[]; dependsOn?: number };
 
