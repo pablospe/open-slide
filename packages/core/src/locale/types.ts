@@ -271,6 +271,27 @@ export type Locale = {
     sharedLayoutHint: string;
     inlineLayoutHint: string;
     layerLayoutHint: string;
+    structureSection: string;
+    deleteElement: string;
+    duplicateElement: string;
+    moveElementEarlier: string;
+    moveElementLater: string;
+    structureHint: string;
+    structurePendingEdits: string;
+    structureSingleOnly: string;
+    structureExternal: string;
+    structureFailed: string;
+    structureRefusals: {
+      notFound: string;
+      root: string;
+      expression: string;
+      conditional: string;
+      map: string;
+      shared: string;
+      comment: string;
+      noSibling: string;
+      siblingNotElement: string;
+    };
     inspect: string;
     deselect: string;
     agentWatching: string;

@@ -1,6 +1,13 @@
 import * as t from '@babel/types';
 import { textDiff } from '../app/lib/text-diff.ts';
 import { findJsxAncestors, parseSource, walkAll, walkJsx } from './babel-walk.ts';
+import {
+  isStructureOp,
+  planStructureEdit,
+  type SourceLocation,
+  type StructureOp,
+  type StructureRefusal,
+} from './structure-ops.ts';
 
 export type EditOp =
   | { kind: 'set-style'; key: string; value: string | null; prevText?: string }
@@ -14,11 +21,16 @@ export type EditOp =
       prevText?: string;
     }
   | { kind: 'set-attr-asset'; attr: string; assetPath: string }
-  | { kind: 'replace-placeholder-with-image'; assetPath: string };
+  | { kind: 'replace-placeholder-with-image'; assetPath: string }
+  | StructureOp;
 
 export type ApplyEditResult =
-  | { ok: true; source: string }
-  | { ok: false; status: number; error: string };
+  | { ok: true; source: string; location?: SourceLocation }
+  | { ok: false; status: number; error: string; code?: StructureRefusal };
+
+export type EditPlan =
+  | { ok: true; splices: Splice[]; location?: SourceLocation }
+  | { ok: false; status: number; error: string; code?: StructureRefusal };
 
 export type Splice = { from: number; to: number; text: string };
 
@@ -142,7 +154,7 @@ export function safeAssetIdentifier(filename: string, taken: Set<string>): strin
   return candidate;
 }
 
-function findJsxByStart(ast: t.Node, line: number, column: number): t.JSXElement | null {
+export function findJsxByStart(ast: t.Node, line: number, column: number): t.JSXElement | null {
   let hit: t.JSXElement | null = null;
   walkJsx(ast, (n) => {
     if (!t.isJSXElement(n) || !n.loc) return;
@@ -214,6 +226,9 @@ export function findElementForEdit(
   column: number,
   ops: EditOp[],
 ): t.JSXElement | null {
+  // Structural ops must never fall back to an enclosing element: removing the
+  // parent of what was clicked is far worse than refusing.
+  if (ops.some(isStructureOp)) return findJsxByStart(ast, line, column);
   const element = findInnermostJsxElement(ast, line, column);
   const prevText = fallbackTextForOps(ops);
   if (prevText === null) return element;
@@ -769,7 +784,7 @@ type EnclosingComponent = {
 };
 
 // Smallest top-level capitalized function whose body covers `target`.
-function findEnclosingComponent(ast: t.File, target: t.Node): EnclosingComponent | null {
+export function findEnclosingComponent(ast: t.File, target: t.Node): EnclosingComponent | null {
   let best: EnclosingComponent | null = null;
   let bestSize = Number.POSITIVE_INFINITY;
   const targetStart = target.start ?? 0;
@@ -868,7 +883,7 @@ function collectPropCallSiteCandidates(
 
 // Smallest enclosing `arr.map((p) => …)` callback (or `.flatMap`) that
 // covers `target`. Returns the callback fn plus the array argument node.
-function findEnclosingMapCallback(
+export function findEnclosingMapCallback(
   ast: t.Node,
   target: t.Node,
 ): { fn: t.ArrowFunctionExpression | t.FunctionExpression; arrayArg: t.Expression } | null {
@@ -1138,7 +1153,9 @@ export function applyEdit(
 ): ApplyEditResult {
   const plan = planEdit(source, line, column, ops);
   if (!plan.ok) return plan;
-  return plan.splices.length ? applySplices(source, plan.splices) : { ok: true, source };
+  if (!plan.splices.length) return { ok: true, source };
+  const result = applySplices(source, plan.splices);
+  return result.ok && plan.location ? { ...result, location: plan.location } : result;
 }
 
 export function planEdit(
@@ -1147,11 +1164,18 @@ export function planEdit(
   column: number,
   ops: EditOp[],
   exactLocation = false,
-): { ok: true; splices: Splice[] } | { ok: false; status: number; error: string } {
+): EditPlan {
   if (ops.length === 0) return { ok: true, splices: [] };
 
   const ast = parseSource(source);
   if (!ast) return { ok: false, status: 422, error: 'could not parse source' };
+  const structureOp = ops.find(isStructureOp);
+  if (structureOp) {
+    if (ops.length > 1) {
+      return { ok: false, status: 400, error: 'a structural op must be the only op in its edit' };
+    }
+    return planStructureEdit(ast, source, line, column, structureOp);
+  }
   const element = exactLocation
     ? findJsxByStart(ast, line, column)
     : findElementForEdit(ast, line, column, ops);

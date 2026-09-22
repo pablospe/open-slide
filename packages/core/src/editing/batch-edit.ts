@@ -6,6 +6,7 @@ import {
   planEdit,
   type Splice,
 } from './edit-ops.ts';
+import { isStructureOp, type SourceLocation, type StructureRefusal } from './structure-ops.ts';
 
 export type BatchEdit = {
   line?: number;
@@ -13,7 +14,12 @@ export type BatchEdit = {
   ops?: EditOp[];
   dependsOn?: number;
 };
-export type BatchEditResult = { ok: boolean; error?: string };
+export type BatchEditResult = {
+  ok: boolean;
+  error?: string;
+  code?: StructureRefusal;
+  location?: SourceLocation;
+};
 
 type TrackedEdit = {
   offset: number | null;
@@ -41,6 +47,15 @@ export function applyEditBatch(
   source: string,
   edits: BatchEdit[],
 ): { source: string; results: BatchEditResult[] } {
+  // Structural ops rewrite sibling ranges, so later offsets in the same batch
+  // cannot be rebased reliably; they are applied alone, never buffered.
+  if (
+    edits.length > 1 &&
+    edits.some((edit) => Array.isArray(edit?.ops) && edit.ops.some((op) => op && isStructureOp(op)))
+  ) {
+    const error = 'a structural edit must be the only edit in its batch';
+    return { source, results: edits.map(() => ({ ok: false, error })) };
+  }
   const ast = parseSource(source);
   const targets = new Map<number, number>();
   const textTargets = new Map<string, number>();
@@ -52,6 +67,7 @@ export function applyEditBatch(
       !Number.isInteger(edit.column ?? 0) ||
       (edit.column ?? 0) < 0 ||
       !Array.isArray(edit.ops) ||
+      edit.ops.some((op) => !op || typeof op !== 'object') ||
       (edit.dependsOn !== undefined &&
         (!Number.isInteger(edit.dependsOn) || edit.dependsOn < 0 || edit.dependsOn >= index))
     ) {
@@ -104,7 +120,7 @@ export function applyEditBatch(
     const column = edit.offset - before.lastIndexOf('\n') - 1;
     const plan = planEdit(next, line, column, edit.ops, true);
     if (!plan.ok) {
-      results.push({ ok: false, error: plan.error });
+      results.push({ ok: false, error: plan.error, ...(plan.code ? { code: plan.code } : {}) });
       continue;
     }
     const result = plan.splices.length
@@ -120,7 +136,7 @@ export function applyEditBatch(
       if (pending.offset !== null) pending.offset = rebaseOffset(pending.offset, splices, target);
     }
     next = result.source;
-    results.push({ ok: true });
+    results.push(plan.location ? { ok: true, location: plan.location } : { ok: true });
   }
   return { source: next, results };
 }
