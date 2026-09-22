@@ -22,6 +22,7 @@ import {
 } from '@/lib/inspector/text-edit-timeline';
 import { type SlideComment, useComments } from '@/lib/inspector/use-comments';
 import { type Edit, type EditOp, useEditor } from '@/lib/inspector/use-editor';
+import { useInsertSnippet } from '@/lib/inspector/use-insert-snippet';
 import { useStructureActions } from '@/lib/inspector/use-structure-actions';
 import { useVisualEditor, type VisualEdit } from '@/lib/inspector/use-visual-editor';
 import { isShortcutControlTarget, isTypingTarget } from '@/lib/keys';
@@ -333,6 +334,7 @@ type InspectorCtx = {
   setSelection: (targets: SelectedTarget[]) => void;
   bufferBatch: (edits: VisualEdit[], coalesceKey?: string) => void;
   structure: ReturnType<typeof useStructureActions>;
+  insert: ReturnType<typeof useInsertSnippet>;
   visual: ReturnType<typeof useVisualEditor>;
   selected: SelectedTarget | null;
   setSelected: (s: SelectedTarget | null) => void;
@@ -793,9 +795,22 @@ export function InspectorProvider({
     bufferBatch,
   });
 
+  const sourceEditLock = useRef(false);
   const structure = useStructureActions({
+    lock: sourceEditLock,
     committing,
     slideId,
+    selection,
+    setSelection,
+    onApplied: history.clear,
+  });
+
+  const insert = useInsertSnippet({
+    lock: sourceEditLock,
+    committing,
+    pendingCount,
+    slideId,
+    pageIndex,
     selection,
     setSelection,
     onApplied: history.clear,
@@ -1226,6 +1241,7 @@ export function InspectorProvider({
       bufferBatch,
       visual,
       structure,
+      insert,
       selected,
       setSelected,
       inlineEdit,
@@ -1264,6 +1280,7 @@ export function InspectorProvider({
       bufferBatch,
       visual,
       structure,
+      insert,
       selected,
       inlineEdit,
       inlineSelection,

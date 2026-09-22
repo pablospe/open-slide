@@ -1168,7 +1168,7 @@ type AssetEditPlan = {
   attrSplice: Splice;
 };
 
-function planAssetImport(
+export function planAssetImport(
   ast: t.File,
   assetPath: string,
 ): { identifier: string; importSplice: Splice | null } {
@@ -1180,11 +1180,12 @@ function planAssetImport(
   }
   const filename = assetPath.slice(assetPath.lastIndexOf('/') + 1);
   const identifier = safeAssetIdentifier(filename, collectTopLevelIdentifiers(ast));
-  const importStmt = `import ${identifier} from '${assetPath.replace(/'/g, "\\'")}';\n`;
+  const importStmt = `import ${identifier} from '${assetPath.replace(/'/g, "\\'")}';`;
   const last = imports[imports.length - 1];
-  const insertAt = last ? (last.node.end ?? 0) : 0;
-  const prefix = last ? '\n' : '';
-  return { identifier, importSplice: { from: insertAt, to: insertAt, text: prefix + importStmt } };
+  const importSplice = last
+    ? { from: last.node.end ?? 0, to: last.node.end ?? 0, text: `\n${importStmt}` }
+    : { from: 0, to: 0, text: `${importStmt}\n` };
+  return { identifier, importSplice };
 }
 
 function planAssetAttr(

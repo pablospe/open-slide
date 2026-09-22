@@ -12,7 +12,11 @@ export type StructureRefusal =
   | 'shared'
   | 'comment'
   | 'no-sibling'
-  | 'sibling-not-element';
+  | 'sibling-not-element'
+  | 'unknown-snippet'
+  | 'asset-required'
+  | 'page-not-found'
+  | 'page-root';
 
 export const STRUCTURE_OPS: Record<StructureActionId, (instanceCount: number) => EditOp> = {
   moveEarlier: (instanceCount) => ({ kind: 'move-element', direction: 'earlier', instanceCount }),
@@ -31,6 +35,10 @@ const REFUSAL_LABELS: Record<StructureRefusal, keyof Locale['inspector']['struct
   comment: 'comment',
   'no-sibling': 'noSibling',
   'sibling-not-element': 'siblingNotElement',
+  'unknown-snippet': 'unknownSnippet',
+  'asset-required': 'assetRequired',
+  'page-not-found': 'pageNotFound',
+  'page-root': 'pageRoot',
 };
 
 export function refusalMessage(

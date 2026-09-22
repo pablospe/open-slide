@@ -15,7 +15,15 @@ export type EditOp =
   | { kind: 'replace-placeholder-with-image'; assetPath: string }
   | { kind: 'remove-element'; instanceCount?: number }
   | { kind: 'duplicate-element'; instanceCount?: number }
-  | { kind: 'move-element'; direction: 'earlier' | 'later'; instanceCount?: number };
+  | { kind: 'move-element'; direction: 'earlier' | 'later'; instanceCount?: number }
+  | {
+      kind: 'insert-snippet';
+      snippetId: string;
+      position: 'after-selection' | 'end-of-page';
+      pageIndex?: number;
+      assetPath?: string;
+      instanceCount?: number;
+    };
 
 export type Edit = { line: number; column: number; ops: EditOp[]; dependsOn?: number };
 

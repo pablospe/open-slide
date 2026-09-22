@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { type RefObject, useCallback, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import type { SelectedTarget } from '@/components/inspector/inspector-provider';
 import { useLocale } from '@/lib/use-locale';
@@ -7,6 +7,9 @@ import { refusalMessage, STRUCTURE_OPS, type StructureActionId } from './structu
 import { StructureEditError, useEditor } from './use-editor';
 
 type Options = {
+  // Shared by every hook that rewrites the slide by source location, so one
+  // op never targets a loc another in-flight op is about to shift.
+  lock: RefObject<boolean>;
   committing: boolean;
   slideId: string;
   selection: SelectedTarget[];
@@ -14,7 +17,7 @@ type Options = {
   onApplied: () => void;
 };
 
-function inspectorRoot(): HTMLElement | null {
+export function inspectorRoot(): HTMLElement | null {
   return document.querySelector<HTMLElement>('[data-inspector-root]');
 }
 
@@ -23,7 +26,7 @@ function inspectorRoot(): HTMLElement | null {
 // element's new loc is the old loc of its sibling, which is already in the
 // DOM before the update lands. Only structure and loc mutations count, since
 // animated decks mutate inline styles continuously.
-function waitForSlideUpdate(slideId: string): { ready: Promise<void>; cancel: () => void } {
+export function waitForSlideUpdate(slideId: string): { ready: Promise<void>; cancel: () => void } {
   let cancel = () => {};
   const ready = new Promise<void>((resolve) => {
     const hot = import.meta.hot;
@@ -73,21 +76,21 @@ export function useStructureActions({
   selection,
   setSelection,
   onApplied,
+  lock,
 }: Options) {
   const { inspector: t } = useLocale();
   const { applyStructureEdit } = useEditor(slideId);
   const [busy, setBusy] = useState(false);
-  const busyRef = useRef(false);
 
   const run = useCallback(
     async (id: StructureActionId) => {
-      if (busyRef.current || committing) return;
+      if (lock.current || committing) return;
       const target = selection[0];
       if (!target) return;
       const loc = `${target.line}:${target.column}`;
       const instanceCount =
         inspectorRoot()?.querySelectorAll(`[data-slide-loc="${loc}"]`).length ?? 1;
-      busyRef.current = true;
+      lock.current = true;
       setBusy(true);
       const update = waitForSlideUpdate(slideId);
       try {
@@ -116,11 +119,11 @@ export function useStructureActions({
           (err instanceof Error ? err.message : String(err));
         toast.error(`${t.structureFailed} ${reason}`);
       } finally {
-        busyRef.current = false;
+        lock.current = false;
         setBusy(false);
       }
     },
-    [applyStructureEdit, committing, onApplied, selection, setSelection, slideId, t],
+    [applyStructureEdit, committing, lock, onApplied, selection, setSelection, slideId, t],
   );
 
   return useMemo(() => ({ run, busy }), [run, busy]);
