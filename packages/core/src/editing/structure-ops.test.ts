@@ -116,7 +116,7 @@ describe('duplicate-element', () => {
     expect(r.location).toEqual({ line: 2, column: 16 });
   });
 
-  it('strips id and key attributes from the copy and its descendants only', () => {
+  it("strips every id and the copied element's own key", () => {
     const src = lines(
       'export default [() => (',
       '  <div>',
@@ -131,6 +131,23 @@ describe('duplicate-element', () => {
       '    <section id="intro" key="k" className="x">\n      <h2 id={"t"}>T</h2>\n    </section>';
     const copy = '    <section className="x">\n      <h2>T</h2>\n    </section>';
     expect(r.source).toBe(src.replace(original, `${original}\n${copy}`));
+  });
+});
+
+describe('duplicate-element keys', () => {
+  it('keeps keys of lists mapped inside the copy', () => {
+    const src = lines(
+      'export default [() => (',
+      '  <div>',
+      '    <ul>',
+      '      {items.map((i) => <li key={i}>{i}</li>)}',
+      '    </ul>',
+      '  </div>',
+      ')];',
+    );
+    const r = ok(run(src, '<ul>', { kind: 'duplicate-element' }));
+    const list = '    <ul>\n      {items.map((i) => <li key={i}>{i}</li>)}\n    </ul>';
+    expect(r.source).toBe(src.replace(list, `${list}\n${list}`));
   });
 });
 
@@ -323,6 +340,18 @@ describe('applyEditBatch with structural ops', () => {
     ]);
     expect(source).toBe(deck);
     expect(results.every((r) => !r.ok)).toBe(true);
+  });
+
+  it('reports malformed ops per edit instead of throwing', () => {
+    const h1 = locate(deck, '<h1>');
+    const { results } = applyEditBatch(deck, [
+      { ...h1, ops: 'nope' as unknown as EditOp[] },
+      { ...h1, ops: [null as unknown as EditOp] },
+    ]);
+    expect(results).toEqual([
+      { ok: false, error: 'invalid edit' },
+      { ok: false, error: 'invalid edit' },
+    ]);
   });
 
   it('reports the refusal code', () => {

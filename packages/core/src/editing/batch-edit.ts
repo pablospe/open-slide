@@ -49,7 +49,10 @@ export function applyEditBatch(
 ): { source: string; results: BatchEditResult[] } {
   // Structural ops rewrite sibling ranges, so later offsets in the same batch
   // cannot be rebased reliably; they are applied alone, never buffered.
-  if (edits.length > 1 && edits.some((edit) => edit?.ops?.some(isStructureOp))) {
+  if (
+    edits.length > 1 &&
+    edits.some((edit) => Array.isArray(edit?.ops) && edit.ops.some((op) => op && isStructureOp(op)))
+  ) {
     const error = 'a structural edit must be the only edit in its batch';
     return { source, results: edits.map(() => ({ ok: false, error })) };
   }
@@ -64,6 +67,7 @@ export function applyEditBatch(
       !Number.isInteger(edit.column ?? 0) ||
       (edit.column ?? 0) < 0 ||
       !Array.isArray(edit.ops) ||
+      edit.ops.some((op) => !op || typeof op !== 'object') ||
       (edit.dependsOn !== undefined &&
         (!Number.isInteger(edit.dependsOn) || edit.dependsOn < 0 || edit.dependsOn >= index))
     ) {

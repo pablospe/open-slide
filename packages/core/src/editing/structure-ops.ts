@@ -3,6 +3,7 @@ import { walkAll } from './babel-walk.ts';
 import {
   findEnclosingComponent,
   findEnclosingMapCallback,
+  findJsxAttr,
   findJsxByStart,
   type Splice,
 } from './edit-ops.ts';
@@ -131,14 +132,16 @@ function removeSplice(source: string, element: t.JSXElement): Splice {
   return { from: start, to: spaceBefore ? after : end, text: '' };
 }
 
-// Copies must not collide with the original on DOM `id` or React `key`, so
-// both are dropped from the copy and every element inside it.
+// DOM ids are page-global, so every `id` in the copy is dropped. React keys
+// only need to be unique among siblings: just the copied element's own `key`
+// can collide, while keys of lists mapped inside the copy must stay.
 function copyWithoutIdentity(source: string, element: t.JSXElement): string {
   const start = element.start ?? 0;
+  const ownKey = findJsxAttr(element.openingElement, 'key');
   const cuts: { from: number; to: number }[] = [];
   walkAll(element, (node) => {
     if (!t.isJSXAttribute(node) || !t.isJSXIdentifier(node.name)) return;
-    if (node.name.name !== 'id' && node.name.name !== 'key') return;
+    if (node.name.name !== 'id' && node !== ownKey) return;
     let from = node.start ?? 0;
     while (from > start && /\s/.test(source[from - 1])) from--;
     cuts.push({ from, to: node.end ?? 0 });
