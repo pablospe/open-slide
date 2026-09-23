@@ -577,7 +577,7 @@ export default [Only] satisfies Page[];
     await expect.poll(topmost).toBe('Second block');
   });
 
-  test('Reset position removes the editor move, keeps an unverified zIndex, and undo restores it', async ({
+  test('Reset position removes the editor move and resize, keeps an unverified zIndex, and undo restores it', async ({
     page,
     request,
   }) => {
@@ -603,17 +603,34 @@ export default [Only] satisfies Page[];
     await page.getByRole('button', { name: 'Undo', exact: true }).click();
     await expect.poll(inline).toEqual({ translate: '10px', zIndex: '2' });
 
+    const scale = await first.evaluate((node) => {
+      const canvas = node.closest<HTMLElement>('[data-osd-canvas]');
+      if (!canvas) throw new Error('Block is outside the slide canvas');
+      return canvas.getBoundingClientRect().width / canvas.offsetWidth;
+    });
+    const size = () =>
+      first.evaluate((node) => ({ width: node.style.width, height: node.style.height }));
+    await page.keyboard.down('Alt');
+    await startDrag(page, page.locator('[data-resize-handle="se"]'), 80 * scale, 40 * scale);
+    await page.mouse.up();
+    await page.keyboard.up('Alt');
+    await expect.poll(size).toEqual({ width: '320px', height: '200px' });
+
     await reset.click({ modifiers: ['Alt'] });
     await expect.poll(inline).toEqual({ translate: '', zIndex: '2' });
+    await expect.poll(size).toEqual({ width: '', height: '' });
     const saved = page.waitForResponse(
       (response) => response.url().includes('/__edit') && response.request().method() === 'POST',
     );
     await page.getByRole('button', { name: 'Save', exact: true }).click();
     expect((await saved).ok()).toBe(true);
     const source = await readSlideSource('visual-reset-position');
-    expect(source).not.toContain('translate');
-    expect(source).toContain("zIndex: '2'");
-    expect(source).toContain('width: 240');
+    const block = source
+      .match(/<div style=\{\{[^}]*\}\}>First block<\/div>/)?.[0]
+      .replace(/\s+/g, ' ');
+    expect(block).toBe(
+      "<div style={{ position: 'absolute', left: 120, top: 160, background: '#2a9d8f', padding: 20, zIndex: '2' }}>First block</div>",
+    );
   });
 
   test('layer changes preserve nested absolute geometry through history and save', async ({
