@@ -258,18 +258,16 @@ export const en: Locale = {
     smartGuides: 'Smart guides',
     snappingLabel: 'Snapping',
     layoutLabel: 'Layout',
-    clearLayout: 'Clear layout',
-    clearLayoutTransform: 'Clear position and rotation',
-    clearLayoutAll: 'Clear all layout',
-    clearLayoutHint:
-      'Removes the offset and rotation from dragging. Alt-click to also remove size and layering.',
-    clearLayoutNothing:
-      'Nothing to clear: no offset, rotation, size or layering in the inline style',
-    clearLayoutAltOnly:
-      'No offset or rotation to clear. Alt-click or use the menu to clear size and layering.',
-    clearLayoutOptions: 'Clear layout options',
-    clearLayoutKeptPosition:
-      'Kept position: relative because nested elements are positioned against it.',
+    resetPosition: 'Reset',
+    resetPositionAria: 'Reset position',
+    resetOptions: 'Reset options',
+    resetPositionOnly: 'Reset position and rotation',
+    resetAll: 'Reset position, size and layer',
+    resetHint:
+      'Moves it back to its source position and removes rotation. Alt-click also resets size and layer.',
+    resetAllOnly: 'No move or rotation to reset. Use the menu to reset size and layer.',
+    resetNothing: 'Nothing to reset: no move, rotation, size or layer set by the editor.',
+    resetKeptPosition: 'Kept position: relative because nested elements are positioned against it.',
     snapThirds: 'Thirds',
     snapGrid: 'Grid',
     gridSize: 'Grid size',

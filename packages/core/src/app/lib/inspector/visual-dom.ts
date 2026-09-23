@@ -13,15 +13,14 @@ export const TRANSLATE_STYLE_KEY = 'translate';
 export const ROTATE_STYLE_KEY = 'rotate';
 export const TRANSFORM_STYLE_KEYS = [TRANSLATE_STYLE_KEY, ROTATE_STYLE_KEY] as const;
 export const SIZE_STYLE_KEYS = ['width', 'height'] as const;
-export const SIZE_CONSTRAINT_STYLES = {
+export const SIZE_BOUNDS_STYLES = {
   minWidth: '0px',
   minHeight: '0px',
   maxWidth: 'none',
   maxHeight: 'none',
-  flexShrink: '0',
-  flexGrow: '0',
-  flexBasis: 'auto',
 } as const;
+export const FLEX_SIZE_STYLES = { flexShrink: '0', flexGrow: '0', flexBasis: 'auto' } as const;
+export const SIZE_CONSTRAINT_STYLES = { ...SIZE_BOUNDS_STYLES, ...FLEX_SIZE_STYLES } as const;
 export const LAYER_POSITION_STYLE = { position: 'relative' } as const;
 export const LAYER_INSET_KEYS = [
   'inset',
@@ -48,31 +47,55 @@ export const GESTURE_STYLE_KEYS: readonly string[] = [
   Z_INDEX_KEY,
 ];
 
-export type ClearLayoutScope = 'transform' | 'all';
+export type ResetGestureScope = 'transform' | 'all';
 
-// Keys the editor writes with a fixed value are only cleared when they still hold that value, so
-// an authored `position: 'absolute'` or `maxWidth: 600` survives a full clear.
-function writtenValue(key: string): string | null {
-  if (key in SIZE_CONSTRAINT_STYLES)
-    return SIZE_CONSTRAINT_STYLES[key as keyof typeof SIZE_CONSTRAINT_STYLES];
-  if (key in LAYER_POSITION_STYLE)
-    return LAYER_POSITION_STYLE[key as keyof typeof LAYER_POSITION_STYLE];
-  if ((LAYER_INSET_KEYS as readonly string[]).includes(key)) return LAYER_INSET_VALUE;
-  return null;
+type InlineLayout = Readonly<Record<string, string | undefined>>;
+
+const inlineValue = (inline: InlineLayout, key: string) => inline[key]?.trim() ?? '';
+
+// The source is the only record of a gesture, so ownership is inferred from what the editor writes.
+// Size and layer keys are reset only alongside the signature written with them, so an authored
+// `width: 240`, `flexShrink: 0`, `position: 'relative'` or `zIndex` is not mistaken for a gesture.
+// Translate and rotate carry no companion keys; only the editor's own px/deg format is reset, so an
+// authored `translate: '-50% -50%'` or `rotate: '0.25turn'` survives, while an authored
+// `rotate: '-3deg'` cannot be told apart from a rotate gesture.
+function holds(inline: InlineLayout, styles: Readonly<Record<string, string>>): boolean {
+  return Object.entries(styles).every(([key, value]) => inlineValue(inline, key) === value);
 }
 
-export function clearLayoutOps(
-  inline: Readonly<Record<string, string | undefined>>,
-  scope: ClearLayoutScope,
-): EditOp[] {
-  const keys: readonly string[] = scope === 'transform' ? TRANSFORM_STYLE_KEYS : GESTURE_STYLE_KEYS;
+const LAYER_GROUP_SIGNATURE = {
+  ...LAYER_POSITION_STYLE,
+  ...Object.fromEntries(['top', 'right', 'bottom', 'left'].map((key) => [key, LAYER_INSET_VALUE])),
+};
+
+const EDITOR_LENGTH = String.raw`-?\d+(?:\.\d+)?`;
+const EDITOR_TRANSFORM_FORMATS: Record<(typeof TRANSFORM_STYLE_KEYS)[number], RegExp> = {
+  translate: new RegExp(`^${EDITOR_LENGTH}px(?: ${EDITOR_LENGTH}px)?$`),
+  rotate: new RegExp(`^${EDITOR_LENGTH}deg$`),
+};
+
+export function resetGestureOps(inline: InlineLayout, scope: ResetGestureScope): EditOp[] {
+  const keys: string[] = TRANSFORM_STYLE_KEYS.filter((key) =>
+    EDITOR_TRANSFORM_FORMATS[key].test(inlineValue(inline, key)),
+  );
+  if (scope === 'all') {
+    if (holds(inline, SIZE_BOUNDS_STYLES))
+      keys.push(
+        ...SIZE_STYLE_KEYS,
+        ...Object.keys(SIZE_BOUNDS_STYLES),
+        ...Object.entries(FLEX_SIZE_STYLES)
+          .filter(([key, value]) => inlineValue(inline, key) === value)
+          .map(([key]) => key),
+      );
+    if (holds(inline, LAYER_GROUP_SIGNATURE))
+      keys.push(
+        ...Object.keys(LAYER_POSITION_STYLE),
+        ...LAYER_INSET_KEYS.filter((key) => inlineValue(inline, key) === LAYER_INSET_VALUE),
+        Z_INDEX_KEY,
+      );
+  }
   return keys
-    .filter((key) => {
-      const value = inline[key]?.trim();
-      if (!value) return false;
-      const written = writtenValue(key);
-      return written === null || value === written;
-    })
+    .filter((key) => inlineValue(inline, key))
     .map((key) => ({ kind: 'set-style', key, value: null }));
 }
 

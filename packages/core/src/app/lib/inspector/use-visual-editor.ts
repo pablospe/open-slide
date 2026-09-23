@@ -6,10 +6,8 @@ import { type Alignment, alignRects, distributeRects, unionRects } from './geome
 import type { EditOp } from './use-editor';
 import {
   type Canvas,
-  type ClearLayoutScope,
   canTransform,
   captureTransform,
-  clearLayoutOps,
   editableTargets,
   independentTargets,
   LAYER_INSET_KEYS,
@@ -17,10 +15,12 @@ import {
   LAYER_POSITION_STYLE,
   moveOps,
   previewOps,
+  type ResetGestureScope,
   ROTATE_STYLE_KEY,
   readCanvas,
   readFrame,
   readInlineLayout,
+  resetGestureOps,
   restoreTransform,
   sizeOps,
   styleOp,
@@ -339,14 +339,14 @@ export function useVisualEditor({
     [selection, committing, bufferBatch, slideId, t.inspector.layerLayoutHint],
   );
 
-  const clearLayout = useCallback(
-    (scope: ClearLayoutScope) => {
+  const resetGesture = useCallback(
+    (scope: ResetGestureScope) => {
       if (committing) return;
       const canvas = readCanvas();
       if (!canvas || selection.some((target) => !canTransform(target, canvas))) return;
       let keptPosition = false;
       const edits = independentTargets(selection).flatMap((target) => {
-        let ops = clearLayoutOps(readInlineLayout(target.anchor), scope);
+        let ops = resetGestureOps(readInlineLayout(target.anchor), scope);
         if (
           ops.some((op) => op.kind === 'set-style' && op.key in LAYER_POSITION_STYLE) &&
           anchorsPositionedDescendants(target.anchor)
@@ -363,10 +363,10 @@ export function useVisualEditor({
         }
         return ops.length ? [{ ...target, ops }] : [];
       });
-      if (keptPosition) toast.info(t.inspector.clearLayoutKeptPosition);
+      if (keptPosition) toast.info(t.inspector.resetKeptPosition);
       bufferBatch(edits);
     },
-    [selection, committing, bufferBatch, t.inspector.clearLayoutKeptPosition],
+    [selection, committing, bufferBatch, t.inspector.resetKeptPosition],
   );
 
   const selectParent = useCallback(() => {
@@ -422,7 +422,7 @@ export function useVisualEditor({
       distribute,
       setFrame,
       arrange,
-      clearLayout,
+      resetGesture,
       nudge,
       selectParent,
       selectAll,
@@ -435,7 +435,7 @@ export function useVisualEditor({
       distribute,
       setFrame,
       arrange,
-      clearLayout,
+      resetGesture,
       nudge,
       selectParent,
       selectAll,

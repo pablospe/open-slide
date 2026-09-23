@@ -9,14 +9,14 @@ import {
   slideSourcePath,
 } from './helpers.ts';
 
-const SLIDE_ID = 'layout-thirds-clear';
+const SLIDE_ID = 'layout-thirds-reset';
 
 test.afterEach(async ({ page, request }) => {
   await page.close();
   await deleteSlide(request, SLIDE_ID);
 });
 
-test('dragging near a canvas third snaps onto it and Clear layout removes the offset', async ({
+test('dragging near a canvas third snaps onto it and Reset position removes the offset', async ({
   page,
   request,
 }) => {
@@ -41,7 +41,7 @@ export default [Only] satisfies Page[];
   const panel = page.locator('aside[data-inspector-ui]');
   await panel.getByRole('tab', { name: 'Arrange' }).click();
   await panel.getByRole('button', { name: 'Thirds', exact: true }).click();
-  const clear = panel.getByRole('button', { name: 'Clear layout', exact: true });
+  const reset = panel.getByRole('button', { name: 'Reset position', exact: true });
 
   const scale = await block.evaluate((node) => {
     const canvas = node.closest<HTMLElement>('[data-osd-canvas]');
@@ -71,7 +71,7 @@ export default [Only] satisfies Page[];
 
   await block.click();
   await expect.poll(() => block.evaluate((node) => node.style.translate)).not.toBe('');
-  await clear.click();
+  await reset.click();
   await expect.poll(() => block.evaluate((node) => node.style.translate)).toBe('');
   await save();
   await expect.poll(() => readSlideSource(SLIDE_ID)).not.toContain('translate');

@@ -14,13 +14,13 @@ import {
   BringToFront,
   Copy,
   CornerLeftUp,
-  Eraser,
   FileCode2,
   type LucideIcon,
   MoveDown,
   MoveUp,
   PencilLine,
   RectangleHorizontal,
+  RotateCcw,
   SendToBack,
   SquareDashedMousePointer,
   Trash2,
@@ -30,7 +30,7 @@ import type { Locale } from '../../../locale/types';
 import type { Alignment } from './geometry';
 import type { StructureActionId } from './structure-actions';
 import type { ArrangeDirection } from './use-visual-editor';
-import type { ClearLayoutScope } from './visual-dom';
+import type { ResetGestureScope } from './visual-dom';
 
 type StringKeys<T> = { [K in keyof T]: T[K] extends string ? K : never }[keyof T];
 export type InspectorText = StringKeys<Locale['inspector']>;
@@ -53,8 +53,8 @@ export type EditorActionId =
   | 'alignBottom'
   | 'distributeHorizontal'
   | 'distributeVertical'
-  | 'clearLayout'
-  | 'clearLayoutAll'
+  | 'resetPosition'
+  | 'resetAll'
   | 'selectParent'
   | 'selectAll'
   | 'copySourceLocation'
@@ -84,7 +84,7 @@ export type EditorActionState = {
   shared: boolean;
   external: boolean;
   text: boolean;
-  clearable: Record<ClearLayoutScope, boolean>;
+  resettable: Record<ResetGestureScope, boolean>;
   canAddPage: boolean;
 };
 
@@ -97,7 +97,7 @@ export type EditorActionContext = {
     align: (alignment: Alignment, toSlide: boolean) => void;
     distribute: (axis: 'x' | 'y') => void;
     arrange: (direction: ArrangeDirection) => void;
-    clearLayout: (scope: ClearLayoutScope) => void;
+    resetGesture: (scope: ResetGestureScope) => void;
     nudge: (vector: { x: number; y: number }, step: number) => void;
     selectParent: () => void;
     selectAll: () => void;
@@ -297,28 +297,28 @@ export const EDITOR_ACTIONS: readonly EditorAction[] = [
   ),
   distributeAction('distributeVertical', 'distributeVertical', AlignVerticalDistributeCenter, 'y'),
   {
-    id: 'clearLayout',
+    id: 'resetPosition',
     group: 'layout',
-    label: 'clearLayoutTransform',
-    icon: Eraser,
+    label: 'resetPositionOnly',
+    icon: RotateCcw,
     enabled: (state) => {
       const base = transformable(state);
       if (!base.enabled) return base;
-      return state.clearable.transform ? ok : no('clearLayoutNothing');
+      return state.resettable.transform ? ok : no('resetNothing');
     },
-    run: (ctx) => ctx.visual.clearLayout('transform'),
+    run: (ctx) => ctx.visual.resetGesture('transform'),
   },
   {
-    id: 'clearLayoutAll',
+    id: 'resetAll',
     group: 'layout',
-    label: 'clearLayoutAll',
-    icon: Eraser,
+    label: 'resetAll',
+    icon: RotateCcw,
     enabled: (state) => {
       const base = transformable(state);
       if (!base.enabled) return base;
-      return state.clearable.all ? ok : no('clearLayoutNothing');
+      return state.resettable.all ? ok : no('resetNothing');
     },
-    run: (ctx) => ctx.visual.clearLayout('all'),
+    run: (ctx) => ctx.visual.resetGesture('all'),
   },
   {
     id: 'selectParent',

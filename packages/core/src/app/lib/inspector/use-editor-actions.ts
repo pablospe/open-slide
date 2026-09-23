@@ -12,19 +12,19 @@ import {
 } from './editor-actions';
 import { isEditableTextContainer } from './pick-target';
 import { formatSourceLocation } from './source-location';
-import { canTransform, clearLayoutOps, readCanvas, readInlineLayout } from './visual-dom';
+import { canTransform, readCanvas, readInlineLayout, resetGestureOps } from './visual-dom';
 
 export type SelectionFacts = Pick<
   EditorActionState,
-  'transformable' | 'shared' | 'external' | 'text' | 'clearable'
+  'transformable' | 'shared' | 'external' | 'text' | 'resettable'
 >;
 
 export function readSelectionFacts(selection: SelectedTarget[]): SelectionFacts {
   const canvas = readCanvas();
   const anchors = selection.map((target) => target.anchor).filter((anchor) => anchor.isConnected);
   const primary = selection.at(-1);
-  const clearable = (scope: 'transform' | 'all') =>
-    anchors.some((anchor) => clearLayoutOps(readInlineLayout(anchor), scope).length > 0);
+  const resettable = (scope: 'transform' | 'all') =>
+    anchors.some((anchor) => resetGestureOps(readInlineLayout(anchor), scope).length > 0);
   return {
     transformable:
       !!canvas && selection.length > 0 && selection.every((target) => canTransform(target, canvas)),
@@ -37,7 +37,7 @@ export function readSelectionFacts(selection: SelectedTarget[]): SelectionFacts 
       ),
     external: !!primary && primary.anchor.dataset.slideLoc !== `${primary.line}:${primary.column}`,
     text: selection.length === 1 && !!primary && isEditableTextContainer(primary.anchor),
-    clearable: { transform: clearable('transform'), all: clearable('all') },
+    resettable: { transform: resettable('transform'), all: resettable('all') },
   };
 }
 

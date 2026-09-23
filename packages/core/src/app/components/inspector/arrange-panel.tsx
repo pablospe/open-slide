@@ -1,11 +1,11 @@
 import {
   ChevronDown,
   CornerLeftUp,
-  Eraser,
   Grid3x3,
   Grip,
   type LucideIcon,
   Magnet,
+  RotateCcw,
 } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { Field, Section } from '@/components/panel/panel-fields';
@@ -90,7 +90,7 @@ export function ArrangePanel() {
   if (!frame) return null;
   const blocked = !frame.facts.transformable || committing;
   const state = actions.stateFrom(frame.facts);
-  const clearable = frame.facts.clearable;
+  const resettable = frame.facts.resettable;
   const actionButton = (id: EditorActionId) => (
     <ActionButton key={id} id={id} state={state} onRun={() => actions.run(id)} />
   );
@@ -198,19 +198,20 @@ export function ArrangePanel() {
                 variant="outline"
                 size="sm"
                 className="min-w-0 flex-1 rounded-r-none"
-                disabled={!editorAction('clearLayoutAll').enabled(state).enabled}
-                onClick={(event) => actions.run(event.altKey ? 'clearLayoutAll' : 'clearLayout')}
+                aria-label={t.resetPositionAria}
+                disabled={!editorAction('resetAll').enabled(state).enabled}
+                onClick={(event) => actions.run(event.altKey ? 'resetAll' : 'resetPosition')}
               >
-                <Eraser data-icon="inline-start" />
-                {t.clearLayout}
+                <RotateCcw data-icon="inline-start" />
+                {t.resetPosition}
               </Button>
             </TooltipTrigger>
             <TooltipContent className="max-w-60">
-              {clearable.transform
-                ? t.clearLayoutHint
-                : clearable.all
-                  ? t.clearLayoutAltOnly
-                  : t.clearLayoutNothing}
+              {resettable.transform
+                ? t.resetHint
+                : resettable.all
+                  ? t.resetAllOnly
+                  : t.resetNothing}
             </TooltipContent>
           </Tooltip>
           <DropdownMenu>
@@ -220,8 +221,8 @@ export function ArrangePanel() {
                   variant="outline"
                   size="icon-sm"
                   className="-ml-1.5 rounded-l-none border-l-0"
-                  aria-label={t.clearLayoutOptions}
-                  disabled={!editorAction('clearLayoutAll').enabled(state).enabled}
+                  aria-label={t.resetOptions}
+                  disabled={!editorAction('resetAll').enabled(state).enabled}
                 />
               }
             >
@@ -229,13 +230,13 @@ export function ArrangePanel() {
             </DropdownMenuTrigger>
             <DropdownMenuContent data-inspector-ui align="end" className="min-w-[200px]">
               <DropdownMenuItem
-                disabled={!editorAction('clearLayout').enabled(state).enabled}
-                onClick={() => actions.run('clearLayout')}
+                disabled={!editorAction('resetPosition').enabled(state).enabled}
+                onClick={() => actions.run('resetPosition')}
               >
-                {t.clearLayoutTransform}
+                {t.resetPositionOnly}
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => actions.run('clearLayoutAll')}>
-                {t.clearLayoutAll}
+              <DropdownMenuItem onClick={() => actions.run('resetAll')}>
+                {t.resetAll}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

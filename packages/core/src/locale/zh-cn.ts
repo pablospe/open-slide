@@ -257,18 +257,15 @@ export const zhCN: Locale = {
     smartGuides: '智能参考线',
     snappingLabel: '吸附',
     layoutLabel: 'Layout',
-    clearLayout: 'Clear layout',
-    clearLayoutTransform: 'Clear position and rotation',
-    clearLayoutAll: 'Clear all layout',
-    clearLayoutHint:
-      'Removes the offset and rotation from dragging. Alt-click to also remove size and layering.',
-    clearLayoutNothing:
-      'Nothing to clear: no offset, rotation, size or layering in the inline style',
-    clearLayoutAltOnly:
-      'No offset or rotation to clear. Alt-click or use the menu to clear size and layering.',
-    clearLayoutOptions: 'Clear layout options',
-    clearLayoutKeptPosition:
-      'Kept position: relative because nested elements are positioned against it.',
+    resetPosition: '重置',
+    resetPositionAria: '重置位置',
+    resetOptions: '重置选项',
+    resetPositionOnly: '重置位置和旋转',
+    resetAll: '重置位置、尺寸和图层',
+    resetHint: '移回源代码中的位置并移除旋转。按住 Alt 点击还会重置尺寸和图层。',
+    resetAllOnly: '没有可重置的移动或旋转。可使用菜单重置尺寸和图层。',
+    resetNothing: '没有可重置的内容：没有编辑器设置的移动、旋转、尺寸或图层。',
+    resetKeptPosition: '已保留 position: relative，因为内部元素以它为定位基准。',
     snapThirds: 'Thirds',
     snapGrid: 'Grid',
     gridSize: 'Grid size',

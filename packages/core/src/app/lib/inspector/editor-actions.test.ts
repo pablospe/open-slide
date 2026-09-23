@@ -20,7 +20,7 @@ const state = (overrides: Partial<EditorActionState> = {}): EditorActionState =>
   shared: false,
   external: false,
   text: true,
-  clearable: { transform: true, all: true },
+  resettable: { transform: true, all: true },
   canAddPage: true,
   ...overrides,
 });
@@ -53,7 +53,7 @@ describe('EDITOR_ACTIONS', () => {
       state({ pendingCount: 1 }),
       state({ external: true }),
       state({ structureBusy: true }),
-      state({ text: false, clearable: { transform: false, all: false }, canAddPage: false }),
+      state({ text: false, resettable: { transform: false, all: false }, canAddPage: false }),
     ];
     for (const s of states)
       for (const value of Object.values(reasons(s)))
@@ -103,7 +103,7 @@ describe('enabled()', () => {
     const r = reasons(state({ shared: true, transformable: false }));
     expect(r.alignLeft).toBe('sharedLayoutHint');
     expect(r.bringForward).toBe('sharedLayoutHint');
-    expect(r.clearLayout).toBe('sharedLayoutHint');
+    expect(r.resetPosition).toBe('sharedLayoutHint');
     expect(r.nudgeUp).toBe('sharedLayoutHint');
     expect(r.delete).toBe('structureShared');
     expect(r.duplicate).toBe('structureShared');
@@ -141,16 +141,14 @@ describe('enabled()', () => {
     expect(reason('moveLater', state({ structureBusy: true }))).toBe('actionBusy');
   });
 
-  it('gates edit text, clear layout and add page on their own facts', () => {
+  it('gates edit text, reset position and add page on their own facts', () => {
     expect(reason('editText', state({ text: false }))).toBe('actionNotText');
-    expect(reason('clearLayout', state({ clearable: { transform: false, all: true } }))).toBe(
-      'clearLayoutNothing',
+    expect(reason('resetPosition', state({ resettable: { transform: false, all: true } }))).toBe(
+      'resetNothing',
     );
-    expect(reason('clearLayoutAll', state({ clearable: { transform: false, all: true } }))).toBe(
-      null,
-    );
-    expect(reason('clearLayoutAll', state({ clearable: { transform: false, all: false } }))).toBe(
-      'clearLayoutNothing',
+    expect(reason('resetAll', state({ resettable: { transform: false, all: true } }))).toBe(null);
+    expect(reason('resetAll', state({ resettable: { transform: false, all: false } }))).toBe(
+      'resetNothing',
     );
     expect(reason('addPage', state({ canAddPage: false }))).toBe('actionAddPageUnavailable');
   });
@@ -164,7 +162,7 @@ describe('run()', () => {
       align: vi.fn(),
       distribute: vi.fn(),
       arrange: vi.fn(),
-      clearLayout: vi.fn(),
+      resetGesture: vi.fn(),
       nudge: vi.fn(),
       selectParent: vi.fn(),
       selectAll: vi.fn(),
@@ -181,7 +179,7 @@ describe('run()', () => {
     editorAction('alignRight').run(ctx);
     editorAction('sendToBack').run(ctx);
     editorAction('distributeVertical').run(ctx);
-    editorAction('clearLayoutAll').run(ctx);
+    editorAction('resetAll').run(ctx);
     editorAction('nudgeLeft').run(ctx, { shiftKey: true });
     editorAction('nudgeDown').run(ctx, { shiftKey: false });
     editorAction('editText').run(ctx);
@@ -191,7 +189,7 @@ describe('run()', () => {
     expect(ctx.visual.align).toHaveBeenCalledWith('right', true);
     expect(ctx.visual.arrange).toHaveBeenCalledWith('back');
     expect(ctx.visual.distribute).toHaveBeenCalledWith('y');
-    expect(ctx.visual.clearLayout).toHaveBeenCalledWith('all');
+    expect(ctx.visual.resetGesture).toHaveBeenCalledWith('all');
     expect(ctx.visual.nudge).toHaveBeenNthCalledWith(1, { x: -1, y: 0 }, 10);
     expect(ctx.visual.nudge).toHaveBeenNthCalledWith(2, { x: 0, y: 1 }, 1);
     expect(ctx.editText).toHaveBeenCalledWith(ctx.selection[0]);

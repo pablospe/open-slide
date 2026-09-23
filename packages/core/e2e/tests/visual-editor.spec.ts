@@ -577,6 +577,45 @@ export default [Only] satisfies Page[];
     await expect.poll(topmost).toBe('Second block');
   });
 
+  test('Reset position removes the editor move, keeps an unverified zIndex, and undo restores it', async ({
+    page,
+    request,
+  }) => {
+    const { first } = await openBlocks(page, request, 'visual-reset-position');
+    await first.click({ position: { x: 10, y: 10 } });
+    const panel = page.locator('aside[data-inspector-ui]');
+    await panel.getByRole('tab', { name: 'Arrange', exact: true }).click();
+    const reset = panel.getByRole('button', { name: 'Reset position', exact: true });
+    const options = panel.getByRole('button', { name: 'Reset options', exact: true });
+    await expect(reset).toBeDisabled();
+    await first.click({ position: { x: 10, y: 10 } });
+    await page.keyboard.press('Shift+ArrowRight');
+    await panel.getByRole('button', { name: 'Bring to front', exact: true }).click();
+    const inline = () =>
+      first.evaluate((node) => ({ translate: node.style.translate, zIndex: node.style.zIndex }));
+    await expect.poll(inline).toEqual({ translate: '10px', zIndex: '2' });
+
+    await reset.click();
+    await expect.poll(inline).toEqual({ translate: '', zIndex: '2' });
+    await expect(reset).toBeDisabled();
+    await expect(options).toBeDisabled();
+
+    await page.getByRole('button', { name: 'Undo', exact: true }).click();
+    await expect.poll(inline).toEqual({ translate: '10px', zIndex: '2' });
+
+    await reset.click({ modifiers: ['Alt'] });
+    await expect.poll(inline).toEqual({ translate: '', zIndex: '2' });
+    const saved = page.waitForResponse(
+      (response) => response.url().includes('/__edit') && response.request().method() === 'POST',
+    );
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    expect((await saved).ok()).toBe(true);
+    const source = await readSlideSource('visual-reset-position');
+    expect(source).not.toContain('translate');
+    expect(source).toContain("zIndex: '2'");
+    expect(source).toContain('width: 240');
+  });
+
   test('layer changes preserve nested absolute geometry through history and save', async ({
     page,
     request,

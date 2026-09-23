@@ -259,18 +259,19 @@ export const ja: Locale = {
     smartGuides: 'スマートガイド',
     snappingLabel: 'スナップ',
     layoutLabel: 'Layout',
-    clearLayout: 'Clear layout',
-    clearLayoutTransform: 'Clear position and rotation',
-    clearLayoutAll: 'Clear all layout',
-    clearLayoutHint:
-      'Removes the offset and rotation from dragging. Alt-click to also remove size and layering.',
-    clearLayoutNothing:
-      'Nothing to clear: no offset, rotation, size or layering in the inline style',
-    clearLayoutAltOnly:
-      'No offset or rotation to clear. Alt-click or use the menu to clear size and layering.',
-    clearLayoutOptions: 'Clear layout options',
-    clearLayoutKeptPosition:
-      'Kept position: relative because nested elements are positioned against it.',
+    resetPosition: 'リセット',
+    resetPositionAria: '位置をリセット',
+    resetOptions: 'リセットのオプション',
+    resetPositionOnly: '位置と回転をリセット',
+    resetAll: '位置・サイズ・重なり順をリセット',
+    resetHint:
+      'ソース上の位置に戻し、回転を解除します。Alt キーを押しながらクリックすると、サイズと重なり順もリセットします。',
+    resetAllOnly:
+      'リセットする移動や回転はありません。メニューからサイズと重なり順をリセットできます。',
+    resetNothing:
+      'リセットする項目はありません。エディターが設定した移動、回転、サイズ、重なり順がありません。',
+    resetKeptPosition:
+      '内側の要素がこの要素を基準に配置されているため、position: relative を残しました。',
     snapThirds: 'Thirds',
     snapGrid: 'Grid',
     gridSize: 'Grid size',

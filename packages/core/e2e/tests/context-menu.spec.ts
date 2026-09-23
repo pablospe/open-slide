@@ -43,9 +43,9 @@ test('right-click selects the element and duplicates it from the menu', async ({
   await expect(menu).toBeVisible();
   await expect(page.locator('[data-selection-frame]')).toBeVisible();
 
-  const clear = menu.locator('[data-editor-action="clearLayout"]');
-  await expect(clear).toHaveAttribute('data-disabled', '');
-  await expect(clear).toContainText('Nothing to clear');
+  const reset = menu.locator('[data-editor-action="resetPosition"]');
+  await expect(reset).toHaveAttribute('data-disabled', '');
+  await expect(reset).toContainText('Nothing to reset');
   await expect(menu.locator('[data-editor-action="editText"]')).not.toHaveAttribute(
     'data-disabled',
   );
