@@ -119,6 +119,11 @@ export function InspectorPanel({
   } = useInspector();
   const designPanel = useDesignPanelState();
   const [snapshot, setSnapshot] = useState<ElementSnapshot | null>(null);
+  // Computed styles resolve var() to a colour, so the saved token is read from the inline style.
+  const styleValue = (target: SelectedTarget, key: 'color' | 'backgroundColor') => {
+    const pending = pendingStyleValue(target.line, target.column, key);
+    return pending === undefined ? target.anchor.style[key] : pending;
+  };
   const [contentSelection, setContentSelection] = useState<ContentSelection | null>(null);
   const [rangeStylePreview, setRangeStylePreview] = useState<RangeStylePreview | null>(null);
   const reloadCounter = useReloadCounter();
@@ -396,7 +401,7 @@ export function InspectorPanel({
                           ? null
                           : palette
                       }
-                      pendingValue={pendingStyleValue(selected.line, selected.column, 'color')}
+                      tokenValue={styleValue(selected, 'color')}
                       onChange={(value) =>
                         applyTextStyle([{ kind: 'set-style', key: 'color', value }])
                       }
@@ -442,11 +447,7 @@ export function InspectorPanel({
                   value={snapshot.backgroundColor ?? '#ffffff'}
                   dim={!snapshot.backgroundColor}
                   palette={palette}
-                  pendingValue={pendingStyleValue(
-                    selected.line,
-                    selected.column,
-                    'backgroundColor',
-                  )}
+                  tokenValue={styleValue(selected, 'backgroundColor')}
                   onChange={(value) =>
                     apply([{ kind: 'set-style', key: 'backgroundColor', value }])
                   }
@@ -851,7 +852,7 @@ function ColorField({
   value,
   dim,
   palette,
-  pendingValue,
+  tokenValue,
   onChange,
   onClear,
   clearable,
@@ -860,7 +861,7 @@ function ColorField({
   value: string;
   dim?: boolean;
   palette?: DesignPalette | null;
-  pendingValue?: string | null;
+  tokenValue?: string | null;
   onChange: (v: string) => void;
   onClear?: () => void;
   clearable: boolean;
@@ -949,7 +950,7 @@ function ColorField({
                 type="button"
                 title={name}
                 aria-label={name}
-                aria-pressed={pendingValue === tokenVar}
+                aria-pressed={tokenValue === tokenVar}
                 onClick={() => onChange(tokenVar)}
                 className="size-5 cursor-pointer rounded-sm border border-foreground/15 shadow-xs transition-[scale,box-shadow] duration-150 hover:border-foreground/30 active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 aria-pressed:ring-2 aria-pressed:ring-foreground/70 aria-pressed:ring-offset-1 aria-pressed:ring-offset-background"
                 style={{ backgroundColor: palette[token] }}
