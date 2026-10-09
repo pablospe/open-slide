@@ -11,7 +11,6 @@ import {
   useState,
 } from 'react';
 import { toast } from 'sonner';
-import { IS_APPLE } from '@/components/command/command-menu';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -40,7 +39,7 @@ import {
 } from '@/lib/inspector/pick-target';
 import { useEditorActions } from '@/lib/inspector/use-editor-actions';
 import { readCanvas, readFrame } from '@/lib/inspector/visual-dom';
-import { isTypingTarget } from '@/lib/keys';
+import { IS_APPLE, isTypingTarget } from '@/lib/keys';
 import { useLocale } from '@/lib/use-locale';
 import { useInspector } from './inspector-provider';
 

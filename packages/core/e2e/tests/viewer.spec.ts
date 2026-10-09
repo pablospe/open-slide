@@ -50,6 +50,27 @@ test.describe('slide viewer', () => {
     );
   });
 
+  test('arrow keys navigate focused thumbnails and keep focus on the selected page', async ({
+    page,
+  }) => {
+    await openSlide(page, 'alpha');
+    await page.getByRole('button', { name: 'Go to page 2' }).focus();
+
+    for (const [key, pageNumber] of [
+      ['ArrowDown', 3],
+      ['ArrowUp', 2],
+      ['ArrowLeft', 1],
+      ['ArrowRight', 2],
+    ] as const) {
+      await page.keyboard.press(key);
+      await expect(page).toHaveURL(new RegExp(`[?&]p=${pageNumber}`));
+      await expect(page.getByRole('button', { name: `Go to page ${pageNumber}` })).toBeFocused();
+    }
+
+    await page.keyboard.press('Alt+ArrowRight');
+    await expect(page).toHaveURL(/[?&]p=2/);
+  });
+
   test('overview grid opens, navigates with the keyboard, and closes', async ({ page }) => {
     await openSlide(page, 'alpha');
     await page.keyboard.press('o');
@@ -165,7 +186,9 @@ test.describe('slide viewer', () => {
       const saved = page.waitForResponse(
         (res) => res.url().includes('/__notes') && res.request().method() === 'PUT',
       );
-      await page.getByPlaceholder('Write speaker notes for this slide…').fill('Drawer note text');
+      await page
+        .getByPlaceholder('Write speaker notes for this slide (Markdown supported)…')
+        .fill('Drawer note text');
       expect((await saved).status()).toBe(200);
       await expect.poll(() => readSlideSource('notes-ui')).toContain('Drawer note text');
     } finally {

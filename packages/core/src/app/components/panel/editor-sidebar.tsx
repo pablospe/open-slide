@@ -37,7 +37,7 @@ export function EditorSidebar({
       data-editor-sidebar
       inert={!open}
       aria-hidden={!open}
-      className="flex h-full shrink-0 justify-end overflow-hidden bg-sidebar transition-[width] ease-swift motion-reduce:transition-none"
+      className="flex h-full max-h-1/2 shrink-0 justify-end overflow-hidden bg-sidebar transition-[width] ease-swift motion-reduce:transition-none md:max-h-none"
       style={{
         width: animVisible ? PANEL_W : 0,
         transitionDuration: `${PANEL_TRANSITION_MS}ms`,

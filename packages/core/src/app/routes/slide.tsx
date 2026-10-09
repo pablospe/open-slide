@@ -46,8 +46,12 @@ import { DesignToggleButton } from '@/components/style-panel/style-panel';
 import { Button, buttonVariants } from '@/components/ui/button';
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuTrigger,
@@ -69,6 +73,7 @@ import { useClickPageNavigation } from '@/lib/use-click-page-navigation';
 import { useDocumentTitle } from '@/lib/use-document-title';
 import { useIsMobile } from '@/lib/use-is-mobile';
 import { format, useLocale } from '@/lib/use-locale';
+import { useMediaQuery } from '@/lib/use-media-query';
 import { useWheelPageNavigation } from '@/lib/use-wheel-page-navigation';
 import { cn } from '@/lib/utils';
 import { SlideCommandMenu } from '../components/command/slide-command-menu';
@@ -148,6 +153,8 @@ export function Slide() {
   const slideViewportRef = useRef<HTMLElement>(null);
   const t = useLocale();
   const isMobile = useIsMobile();
+  const compactToolbar = useMediaQuery('(max-width: 1023.98px)');
+  const narrowToolbar = useMediaQuery('(max-width: 639.98px)');
   const prefersReducedMotion = usePrefersReducedMotion();
 
   const modulePages = useMemo(() => slide?.default ?? [], [slide]);
@@ -652,7 +659,7 @@ export function Slide() {
   };
 
   const exportMenuItems = (
-    <>
+    <DropdownMenuGroup>
       <DropdownMenuItem disabled={exporting} onClick={exportHtml}>
         <FileCode2 />
         {t.slide.exportAsHtml}
@@ -670,11 +677,11 @@ export function Slide() {
         <FileImage />
         {t.slide.exportAsImagePptx}
       </DropdownMenuItem>
-    </>
+    </DropdownMenuGroup>
   );
 
   return (
-    <HistoryProvider>
+    <HistoryProvider pageIndex={index} onPageChange={goTo}>
       <InspectorProvider
         slideId={slideId}
         pageIndex={index}
@@ -683,9 +690,8 @@ export function Slide() {
       >
         <SelectionReporter />
         <div className="flex h-dvh flex-col overflow-hidden bg-sidebar text-foreground">
-          {/* Toolbar sits directly on the chrome ground — three zones, mono-folio center */}
-          <header className="relative flex h-12 shrink-0 items-center gap-2 px-2 md:px-3">
-            <div className="flex flex-1 items-center gap-1.5 md:flex-none md:gap-2">
+          <header className="grid min-h-12 shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 px-2 py-2 md:px-3">
+            <div className="col-start-1 row-start-1 flex min-w-0 items-center gap-1.5 md:gap-2">
               {showSlideBrowser && (
                 <button
                   type="button"
@@ -722,29 +728,23 @@ export function Slide() {
               {import.meta.env.DEV && <AgentConnectedBadge />}
             </div>
 
-            {/* On md+ the title centers to the viewport via absolute positioning. On mobile the
-                two side groups each flex-1, so the in-flow title lands at the viewport center too —
-                and min-w-0 lets it truncate instead of overlapping the icons on narrow widths. */}
-            <div className="pointer-events-none relative flex min-w-0 justify-center px-2 md:absolute md:inset-x-0">
-              <div className="pointer-events-auto min-w-0 max-w-[34rem]">
+            <div className="col-span-3 row-start-2 flex min-w-0 justify-center sm:col-span-1 sm:col-start-2 sm:row-start-1">
+              <div className="min-w-0 max-w-[34rem]">
                 <InlineTitleEditor title={title} onSubmit={(next) => renameSlide(slideId, next)} />
               </div>
             </div>
 
-            <div className="flex flex-1 items-center justify-end gap-1 md:ml-auto md:flex-none">
-              {view === 'slides' && <InspectModeSwitcher />}
-              {import.meta.env.DEV && view === 'slides' && (
+            <div className="col-start-3 row-start-1 flex items-center justify-end gap-1">
+              {view === 'slides' && !narrowToolbar && <InspectModeSwitcher />}
+              {import.meta.env.DEV && view === 'slides' && !compactToolbar && (
                 <span aria-hidden className="mx-0.5 hidden h-5 w-px bg-hairline md:block" />
               )}
-              {view === 'slides' && (
+              {view === 'slides' && !compactToolbar && (
                 <button
                   type="button"
                   aria-label={t.slide.copyLink}
                   title={t.slide.copyLink}
-                  className={cn(
-                    buttonVariants({ variant: 'ghost', size: 'icon-sm' }),
-                    'hidden md:inline-flex',
-                  )}
+                  className={buttonVariants({ variant: 'ghost', size: 'icon-sm' })}
                   onClick={copyLink}
                 >
                   <span className="relative grid size-4 place-items-center">
@@ -763,17 +763,14 @@ export function Slide() {
                   </span>
                 </button>
               )}
-              {view === 'slides' && allowHtmlDownload && (
+              {view === 'slides' && allowHtmlDownload && !compactToolbar && (
                 <DropdownMenu>
                   <DropdownMenuTrigger
                     type="button"
                     disabled={exporting}
                     aria-label={t.slide.download}
                     title={t.slide.download}
-                    className={cn(
-                      buttonVariants({ variant: 'ghost', size: 'icon-sm' }),
-                      'hidden md:inline-flex',
-                    )}
+                    className={buttonVariants({ variant: 'ghost', size: 'icon-sm' })}
                   >
                     {exporting ? (
                       <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
@@ -786,17 +783,13 @@ export function Slide() {
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}
-              {view === 'slides' && (
-                <DropdownMenu>
+              {view === 'slides' && compactToolbar && (
+                <DropdownMenu key={narrowToolbar ? 'narrow' : 'compact'}>
                   <DropdownMenuTrigger
                     type="button"
-                    disabled={exporting}
                     aria-label={t.slide.moreActions}
                     title={t.slide.moreActions}
-                    className={cn(
-                      buttonVariants({ variant: 'ghost', size: 'icon-sm' }),
-                      'inline-flex md:hidden',
-                    )}
+                    className={buttonVariants({ variant: 'ghost', size: 'icon-sm' })}
                   >
                     {exporting ? (
                       <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
@@ -805,34 +798,43 @@ export function Slide() {
                     )}
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="min-w-[200px]">
-                    <DropdownMenuItem onClick={() => setCommandOpen(true)}>
-                      <Terminal />
-                      {t.commandMenu.trigger}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={copyLink}>
-                      <Link2 />
-                      {t.slide.copyLink}
-                    </DropdownMenuItem>
+                    {narrowToolbar && import.meta.env.DEV && (
+                      <EditorMenuItems
+                        designOpen={designOpen}
+                        onDesignToggle={() => setDesignOpen((v) => !v)}
+                      />
+                    )}
+                    <DropdownMenuGroup>
+                      <DropdownMenuItem onClick={() => setCommandOpen(true)}>
+                        <Terminal />
+                        {t.commandMenu.trigger}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={copyLink}>
+                        <Link2 />
+                        {t.slide.copyLink}
+                      </DropdownMenuItem>
+                    </DropdownMenuGroup>
                     {allowHtmlDownload && <DropdownMenuSeparator />}
                     {allowHtmlDownload && exportMenuItems}
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}
-              {view === 'slides' && (
+              {view === 'slides' && !narrowToolbar && (
                 <DesignToggleButton active={designOpen} onToggle={() => setDesignOpen((v) => !v)} />
               )}
-              {view === 'slides' && <InspectPanelButton />}
+              {view === 'slides' && !narrowToolbar && <InspectPanelButton />}
               <span aria-hidden className="mx-0.5 hidden h-5 w-px bg-hairline md:block" />
               {view === 'slides' && (
                 <div className="inline-flex items-stretch">
                   <Button
                     size="sm"
                     variant="brand"
+                    aria-label={t.slide.present}
                     onClick={() => setPlayMode(isMobile ? 'window' : 'fullscreen')}
-                    className="px-2.5 md:rounded-r-none md:px-3"
+                    className="rounded-r-none px-2.5 lg:px-3"
                   >
                     <Play className="size-3.5 fill-current" />
-                    <span className="hidden md:inline">{t.slide.present}</span>
+                    <span className="hidden lg:inline">{t.slide.present}</span>
                   </Button>
                   <DropdownMenu>
                     <DropdownMenuTrigger
@@ -841,32 +843,34 @@ export function Slide() {
                       title={t.slide.presentMenuAria}
                       className={cn(
                         buttonVariants({ variant: 'brand', size: 'sm' }),
-                        'hidden rounded-l-none px-1.5 shadow-[inset_1px_0_0_oklch(0_0_0/0.12),inset_0_1px_0_oklch(1_0_0/0.18),0_1px_0_oklch(0_0_0/0.16)] md:inline-flex',
+                        'rounded-l-none px-1.5 shadow-[inset_1px_0_0_oklch(0_0_0/0.12),inset_0_1px_0_oklch(1_0_0/0.18),0_1px_0_oklch(0_0_0/0.16)]',
                       )}
                     >
                       <ChevronDown className="size-3.5" />
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="min-w-[200px]">
-                      <DropdownMenuItem onClick={() => setPlayMode('window')}>
-                        <Play />
-                        {t.slide.presentInWindow}
-                        <DropdownMenuShortcut>↵</DropdownMenuShortcut>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setPlayMode('fullscreen')}>
-                        <Maximize />
-                        {t.slide.presentFullscreen}
-                        <DropdownMenuShortcut>F</DropdownMenuShortcut>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => {
-                          if (slideId) openPresenterWindow(slideId);
-                          setPlayMode('window');
-                        }}
-                      >
-                        <MonitorSpeaker />
-                        {t.slide.presentPresenter}
-                        <DropdownMenuShortcut>P</DropdownMenuShortcut>
-                      </DropdownMenuItem>
+                      <DropdownMenuGroup>
+                        <DropdownMenuItem onClick={() => setPlayMode('window')}>
+                          <Play />
+                          {t.slide.presentInWindow}
+                          <DropdownMenuShortcut>↵</DropdownMenuShortcut>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setPlayMode('fullscreen')}>
+                          <Maximize />
+                          {t.slide.presentFullscreen}
+                          <DropdownMenuShortcut>F</DropdownMenuShortcut>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => {
+                            if (slideId) openPresenterWindow(slideId);
+                            setPlayMode('window');
+                          }}
+                        >
+                          <MonitorSpeaker />
+                          {t.slide.presentPresenter}
+                          <DropdownMenuShortcut>P</DropdownMenuShortcut>
+                        </DropdownMenuItem>
+                      </DropdownMenuGroup>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
@@ -1125,6 +1129,47 @@ function ResizableRail(props: {
   );
 }
 
+function EditorMenuItems({
+  designOpen,
+  onDesignToggle,
+}: {
+  designOpen: boolean;
+  onDesignToggle: () => void;
+}) {
+  const t = useLocale();
+  const { active, toggle, panelOpen, panelHidden, togglePanel } = useInspector();
+  return (
+    <>
+      <DropdownMenuGroup>
+        <DropdownMenuRadioGroup
+          value={active ? 'edit' : 'preview'}
+          onValueChange={(value) => {
+            if ((value === 'edit') !== active) toggle();
+          }}
+        >
+          <DropdownMenuRadioItem value="preview">{t.inspector.previewMode}</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="edit">{t.inspector.editMode}</DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
+        <DropdownMenuCheckboxItem
+          checked={designOpen}
+          onCheckedChange={onDesignToggle}
+          closeOnClick
+        >
+          {t.stylePanel.designToggle}
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuCheckboxItem
+          checked={active && panelOpen && !panelHidden}
+          onCheckedChange={togglePanel}
+          closeOnClick
+        >
+          {t.inspector.format}
+        </DropdownMenuCheckboxItem>
+      </DropdownMenuGroup>
+      <DropdownMenuSeparator />
+    </>
+  );
+}
+
 function AgentConnectedBadge() {
   const t = useLocale();
   const connected = useAgentSocketConnected();
@@ -1135,6 +1180,7 @@ function AgentConnectedBadge() {
           render={
             <button
               type="button"
+              aria-label={connected ? t.slide.agentConnected : t.slide.agentDisconnected}
               className="ml-1 flex shrink-0 cursor-help items-center gap-1.5 rounded-[3px] border border-hairline bg-card px-1.5 py-0.5 text-[10.5px] text-foreground/85 outline-none transition-colors duration-150 hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring/30"
             >
               <span aria-hidden className="relative flex size-1.5 items-center justify-center">
@@ -1147,7 +1193,9 @@ function AgentConnectedBadge() {
                   <span className="relative inline-flex size-1.5 rounded-full bg-rose-500" />
                 )}
               </span>
-              {connected ? t.slide.agentConnected : t.slide.agentDisconnected}
+              <span className="hidden xl:inline">
+                {connected ? t.slide.agentConnected : t.slide.agentDisconnected}
+              </span>
             </button>
           }
         />

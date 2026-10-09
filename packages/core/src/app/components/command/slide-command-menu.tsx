@@ -17,8 +17,9 @@ import { useNavigate } from 'react-router-dom';
 import { useInspector } from '@/components/inspector/inspector-provider';
 import { EDITOR_ACTIONS, formatShortcut } from '@/lib/inspector/editor-actions';
 import { useEditorActions } from '@/lib/inspector/use-editor-actions';
+import { IS_APPLE } from '@/lib/keys';
 import { format, useLocale } from '@/lib/use-locale';
-import { type CommandGroupSpec, CommandMenu, type CommandSpec, IS_APPLE } from './command-menu';
+import { type CommandGroupSpec, CommandMenu, type CommandSpec } from './command-menu';
 
 const { showSlideBrowser, allowHtmlDownload } = config.build;
 

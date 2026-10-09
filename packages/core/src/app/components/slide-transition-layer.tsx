@@ -832,7 +832,7 @@ export function SlideTransitionLayer({
         </div>
       ) : null}
       {CurrentPage ? (
-        <div ref={incomingLayerRef} className="absolute inset-0">
+        <div ref={incomingLayerRef} data-osd-current-page={current} className="absolute inset-0">
           <SlidePageProvider index={current} total={total}>
             {/* <Steps> reads its uncontrolled reveal state once on mount, so
                 leaving the editor preview remounts the page to reveal everything. */}
