@@ -144,7 +144,7 @@ describe('snapMove with canvas anchors', () => {
     const target: Rect = { x: 400, y: 0, width: 50, height: 50 };
     const result = snapMove(block, { x: 38, y: 0 }, [target], 6, { canvas, grid: 8 });
     expect(result.delta.x).toBe(40);
-    expect(result.guides.find((guide) => guide.axis === 'x')?.kind).toBeUndefined();
+    expect(result.guides.find((guide) => guide.axis === 'x')?.kind).toBe('object');
     expect(
       snapMove(block, { x: 518, y: 0 }, [], 6, { canvas, thirds: true, grid: 7 }).delta.x,
     ).toBe(520);

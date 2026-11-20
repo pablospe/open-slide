@@ -1,31 +1,42 @@
 import { useSyncExternalStore } from 'react';
 
-// Keyed on the clicked element so a page change or HMR remount, which
-// detaches it, retires the pick without any explicit reset.
-export type UntracedPick = { slideId: string; element: Element };
+export type UntracedPick = { slideId: string; element: Pick<Element, 'tagName' | 'isConnected'> };
 
-let current: UntracedPick | null = null;
-const listeners = new Set<() => void>();
-
-export function setUntracedPick(next: UntracedPick | null) {
-  if (current?.element === next?.element) return;
-  current = next;
-  for (const listener of listeners) listener();
-}
-
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
+// Page changes clear the pick explicitly because during a transition the
+// outgoing page stays connected; other removals go through `clearDetached`.
+export function createUntracedPickStore() {
+  let current: UntracedPick | null = null;
+  const listeners = new Set<() => void>();
+  const set = (next: UntracedPick | null) => {
+    if (current?.element === next?.element && current?.slideId === next?.slideId) return;
+    current = next;
+    for (const listener of listeners) listener();
+  };
+  return {
+    get: () => current,
+    set,
+    clearDetached() {
+      if (current && !current.element.isConnected) set(null);
+    },
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
   };
 }
 
-function snapshot() {
-  return current;
-}
-
-export function useUntracedPick(slideId: string): string | null {
-  const pick = useSyncExternalStore(subscribe, snapshot, snapshot);
+export function untracedTag(pick: UntracedPick | null, slideId: string): string | null {
   if (pick?.slideId !== slideId || !pick.element.isConnected) return null;
   return pick.element.tagName.toLowerCase();
+}
+
+const store = createUntracedPickStore();
+
+export const setUntracedPick = store.set;
+export const clearDetachedUntracedPick = store.clearDetached;
+
+export function useUntracedPick(slideId: string): string | null {
+  return untracedTag(useSyncExternalStore(store.subscribe, store.get, store.get), slideId);
 }

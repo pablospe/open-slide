@@ -22,6 +22,7 @@ import {
   type TextEditOp,
   type TextEditStep,
 } from '@/lib/inspector/text-edit-timeline';
+import { clearDetachedUntracedPick, setUntracedPick } from '@/lib/inspector/untraced-pick';
 import { type AddCommentInput, type SlideComment, useComments } from '@/lib/inspector/use-comments';
 import { type Edit, type EditOp, useEditor } from '@/lib/inspector/use-editor';
 import { useInsertSnippet } from '@/lib/inspector/use-insert-snippet';
@@ -1361,6 +1362,7 @@ export function InspectorProvider({
 
     let observer: MutationObserver | null = null;
     const replayAll = () => {
+      clearDetachedUntracedPick();
       if (pendingRef.current.size === 0) return;
       observer?.disconnect();
       const relocations: { key: string; nextKey: string; bucket: Bucket }[] = [];
@@ -1428,6 +1430,7 @@ export function InspectorProvider({
 
   useEffect(() => {
     setSelectionState([]);
+    setUntracedPick(null);
     const pending = pendingRevealRef.current;
     if (!pending) return;
     if (pending.pageIndex !== pageIndex) {
