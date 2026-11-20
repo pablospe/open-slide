@@ -140,6 +140,7 @@ type Options = {
   selection: SelectedTarget[];
   setSelection: (targets: SelectedTarget[]) => void;
   bufferBatch: (edits: VisualEdit[], coalesceKey?: string) => void;
+  removeElements: (targets: SelectedTarget[]) => void;
 };
 
 export function useVisualEditor({
@@ -148,6 +149,7 @@ export function useVisualEditor({
   selection,
   setSelection,
   bufferBatch,
+  removeElements,
 }: Options) {
   const [snapping, setSnapping] = useState(true);
   const [thirds, setThirds] = useState(false);

@@ -10,13 +10,11 @@ import {
 import { type InsertSnippetOp, planInsertSnippet } from './insert-ops.ts';
 
 export type StructureOp =
-  | { kind: 'remove-element'; instanceCount?: number }
   | { kind: 'duplicate-element'; instanceCount?: number }
   | { kind: 'move-element'; direction: 'earlier' | 'later'; instanceCount?: number }
   | InsertSnippetOp;
 
 export const STRUCTURE_OP_KINDS: ReadonlySet<string> = new Set([
-  'remove-element',
   'duplicate-element',
   'move-element',
   'insert-snippet',
@@ -157,16 +155,6 @@ function horizontalSpaceAfter(source: string, offset: number): number {
   return to;
 }
 
-function removeSplice(source: string, element: t.JSXElement): Splice {
-  const lines = ownedLines(source, element);
-  if (lines) return { ...lines, text: '' };
-  const start = element.start ?? 0;
-  const end = element.end ?? 0;
-  const spaceBefore = horizontalSpaceBefore(source, start) < start;
-  const after = horizontalSpaceAfter(source, end);
-  // `a <b/> c` → `a c`: drop one of the two surrounding runs, never both.
-  return { from: start, to: spaceBefore ? after : end, text: '' };
-}
 
 // DOM ids are page-global, so every `id` in the copy is dropped. React keys
 // only need to be unique among siblings: just the copied element's own `key`
@@ -280,8 +268,6 @@ export function planStructureEdit(
   if (!element) return refuse('not-found');
   const parent = guardElement(ast, source, element, op.instanceCount);
   if (typeof parent === 'string') return refuse(parent);
-
-  if (op.kind === 'remove-element') return { ok: true, splices: [removeSplice(source, element)] };
 
   if (op.kind === 'duplicate-element') {
     const { splice, copyOffset } = duplicateSplice(source, element);

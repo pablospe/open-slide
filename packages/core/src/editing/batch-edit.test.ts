@@ -27,6 +27,17 @@ describe('applyEditBatch', () => {
     expect(result.source).toBe('<footer><span>{a} / {b}</span><p>Edited</p></footer>');
   });
 
+  it('removes an element after edits to it and its children land', () => {
+    const source = '<section><div><h1>Title</h1></div><p>Body</p></section>';
+    const result = applyEditBatch(source, [
+      edit(source, '<h1', [style('color', 'red')]),
+      edit(source, '<p', [style('fontSize', '20px')]),
+      edit(source, '<div', [{ kind: 'remove-element' }]),
+    ]);
+    expect(result.results).toEqual([{ ok: true }, { ok: true }, { ok: true }]);
+    expect(result.source).toBe("<section><p style={{ fontSize: '20px' }}>Body</p></section>");
+  });
+
   it('keeps dependent formatting and typing on text that now matches a sibling', () => {
     const source = '<section><h1>Title</h1><p>Body</p></section>';
     const result = applyEditBatch(source, [

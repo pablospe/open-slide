@@ -93,7 +93,12 @@ export function useEditorActions({ onAddPage, alignToSlide = false }: Options = 
       selection,
       alignToSlide,
       visual,
-      runStructure: (id) => void structure.run(id),
+      // Removal is buffered with the other visual edits (undoable, written on
+      // Save); the remaining structure actions still write the source directly.
+      runStructure: (id) => {
+        if (id === 'delete') visual.removeElements(selection);
+        else void structure.run(id);
+      },
       editText: startInlineEdit,
       copySourceLocation: (target) => {
         navigator.clipboard.writeText(formatSourceLocation(slideId, target, config.slidesDir)).then(

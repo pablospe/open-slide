@@ -37,6 +37,7 @@ import { Toggle } from '@/components/ui/toggle';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { type DesignPalette, type DesignSystem, paletteTokenVar } from '@/lib/design';
+import { opaqueHex, rgbToHex } from '@/lib/inspector/color';
 import { findSlideSource } from '@/lib/inspector/fiber';
 import { hasOnlyInlineTextChildren } from '@/lib/inspector/inline-text';
 import { countLocInstances, inspectorStatus } from '@/lib/inspector/source-location';
@@ -46,7 +47,7 @@ import { useUntracedPick } from '@/lib/inspector/untraced-pick';
 import type { EditOp } from '@/lib/inspector/use-editor';
 import { useAgentSocketConnected } from '@/lib/use-agent-socket';
 import { format, useLocale } from '@/lib/use-locale';
-import { cn, round2 } from '@/lib/utils';
+import { round2 } from '@/lib/utils';
 import type { Locale } from '../../../locale/types';
 import { useDesignPanelState } from '../style-panel/design-provider';
 import { ArrangePanel, StructureSection } from './arrange-panel';
@@ -55,6 +56,7 @@ import { InsertSection } from './insert-panel';
 import { readEditableText, type SelectedTarget, useInspector } from './inspector-provider';
 import { RevealSection } from './reveal-section';
 import { InspectorEmptyState, SourceLocationBar } from './source-location-bar';
+import { type PageInfo, PagePanel } from './page-panel';
 
 type ElementSnapshot = {
   fontSize: number;
@@ -94,10 +96,12 @@ export function InspectorPanel({
   preferredTab,
   onTabChange,
   design,
+  page,
 }: {
   preferredTab: 'format' | 'arrange';
   onTabChange: (tab: 'format' | 'arrange') => void;
   design?: DesignSystem;
+  page?: PageInfo;
 }) {
   const {
     togglePanel,
@@ -115,7 +119,6 @@ export function InspectorPanel({
     pendingCount,
     pendingStyleValue,
     opsVersion,
-    add,
     applyEdit,
   } = useInspector();
   const designPanel = useDesignPanelState();
@@ -283,7 +286,7 @@ export function InspectorPanel({
         if (value === 'arrange') stopInlineEdit();
         if (value === 'format' || value === 'arrange') onTabChange(value);
       }}
-      className="h-full shrink-0 gap-0"
+      className="h-full w-full min-w-0 shrink-0 gap-0"
       onPointerDownCapture={(event) => {
         if (!inlineEdit || !(event.target instanceof Element)) return;
         const button = event.target.closest('button');
@@ -499,7 +502,11 @@ export function InspectorPanel({
           </>
         ) : (
           <>
-            <InspectorEmptyState slideId={slideId} status={status} />
+            {status.kind === 'untraced' || !page ? (
+              <InspectorEmptyState slideId={slideId} status={status} />
+            ) : (
+              <PagePanel page={page} />
+            )}
             <Separator />
             <InsertSection design={design} />
           </>
@@ -1106,85 +1113,6 @@ function AgentWatchingBadge() {
   );
 }
 
-// The cue animation re-mounts with every element selection; without this
-// guard it replays each time instead of once per inspector session.
-let commentCuePlayed = false;
-
-function CommentsSection({
-  selected,
-  onAdd,
-}: {
-  selected: { line: number; column: number };
-  onAdd: (line: number, column: number, text: string) => Promise<void>;
-}) {
-  const [draft, setDraft] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [showCue] = useState(() => !commentCuePlayed);
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const t = useLocale();
-
-  useEffect(() => {
-    commentCuePlayed = true;
-  }, []);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== '/') return;
-      if (!(e.metaKey || e.ctrlKey)) return;
-      if (e.altKey || e.shiftKey) return;
-      const ta = wrapRef.current?.querySelector('textarea');
-      if (!ta) return;
-      e.preventDefault();
-      const details = ta.closest('details');
-      if (details) details.open = true;
-      ta.focus({ preventScroll: true });
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
-
-  const submit = async () => {
-    const trimmed = draft.trim();
-    if (!trimmed) return;
-    setSubmitting(true);
-    try {
-      await onAdd(selected.line, selected.column, trimmed);
-      setDraft('');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <div className="px-3.5 pb-3.5">
-      <div className="flex flex-col gap-2">
-        <div ref={wrapRef} className={cn('rounded-[6px]', showCue && 'comment-cue')}>
-          <Textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                e.preventDefault();
-                submit();
-              }
-            }}
-            placeholder={t.inspector.commentPlaceholder}
-            className="min-h-16 resize-none text-[12px]"
-          />
-        </div>
-        <div className="flex items-center justify-between gap-2">
-          <span className="font-mono text-[10.5px] text-muted-foreground/70">
-            {t.inspector.commentShortcutHint}
-          </span>
-          <Button size="sm" variant="brand" disabled={submitting || !draft.trim()} onClick={submit}>
-            {t.inspector.addComment}
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function readSnapshot(el: HTMLElement): ElementSnapshot {
   const cs = getComputedStyle(el);
   const text =
@@ -1210,7 +1138,7 @@ function readSnapshot(el: HTMLElement): ElementSnapshot {
 
   return {
     ...readTypography(el),
-    backgroundColor: isTransparent(cs.backgroundColor) ? null : rgbToHex(cs.backgroundColor),
+    backgroundColor: opaqueHex(cs.backgroundColor),
     textAlign: normalizeTextAlign(cs.textAlign),
     lineHeight: parseLineHeight(cs.lineHeight, parseFloat(cs.fontSize) || 16),
     letterSpacing: parseLetterSpacing(cs.letterSpacing),
@@ -1228,28 +1156,6 @@ function readTypography(el: HTMLElement) {
     fontStyle: cs.fontStyle === 'italic' ? ('italic' as const) : ('normal' as const),
     color: rgbToHex(cs.color) ?? '#000000',
   };
-}
-
-function rgbToHex(value: string): string | null {
-  const m = value.match(/^rgba?\(([^)]+)\)$/);
-  if (!m) return null;
-  const parts = m[1].split(',').map((s) => s.trim());
-  if (parts.length < 3) return null;
-  const r = clampByte(Number(parts[0]));
-  const g = clampByte(Number(parts[1]));
-  const b = clampByte(Number(parts[2]));
-  return `#${[r, g, b].map((n) => n.toString(16).padStart(2, '0')).join('')}`;
-}
-
-function clampByte(n: number): number {
-  return Math.max(0, Math.min(255, Math.round(Number.isFinite(n) ? n : 0)));
-}
-
-function isTransparent(value: string): boolean {
-  if (!value) return true;
-  if (value === 'transparent' || value === 'rgba(0, 0, 0, 0)') return true;
-  const m = value.match(/^rgba\([^)]*,\s*0\)$/);
-  return Boolean(m);
 }
 
 function normalizeTextAlign(v: string): ElementSnapshot['textAlign'] {

@@ -2,9 +2,11 @@ import {
   closestCenter,
   DndContext,
   type DragEndEvent,
+  type DragOverEvent,
   type DragStartEvent,
   KeyboardSensor,
   PointerSensor,
+  type UniqueIdentifier,
   useSensor,
   useSensors,
 } from '@dnd-kit/core';
@@ -27,6 +29,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useOptionalInspector } from '@/components/inspector/inspector-provider';
 import { Button } from '@/components/ui/button';
 import {
   ContextMenu,
@@ -37,7 +40,8 @@ import {
 } from '@/components/ui/context-menu';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { format, useLocale } from '@/lib/use-locale';
+import { haptic } from '@/lib/desktop';
+import { format, plural, useLocale } from '@/lib/use-locale';
 import { cn, pad2 } from '@/lib/utils';
 import type { DesignSystem } from '../lib/design';
 import { SlidePageProvider } from '../lib/page-context';
@@ -75,6 +79,36 @@ type Props = {
   /** When provided, the vertical rail header renders a button that opens the overview grid. */
   onOverview?: () => void;
 };
+
+// Per-page pending comment counts, shown on the rail only while the
+// comment tool is active.
+function usePageCommentCounts(): Map<number, number> | null {
+  const inspector = useOptionalInspector();
+  if (!inspector?.commentMode) return null;
+  const counts = new Map<number, number>();
+  for (const comment of inspector.comments) {
+    if (comment.page === undefined) continue;
+    counts.set(comment.page, (counts.get(comment.page) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function CommentCountBadge({ count, className }: { count: number; className?: string }) {
+  const t = useLocale();
+  return (
+    <span
+      role="img"
+      aria-label={format(plural(count, t.inspector.commentsCount), { count })}
+      data-page-comments={count}
+      className={cn(
+        'flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 font-mono text-[9.5px] font-semibold leading-none text-brand-foreground tabular-nums',
+        className,
+      )}
+    >
+      {count}
+    </span>
+  );
+}
 
 const DEFAULT_VERTICAL_THUMB_WIDTH = 184;
 const VERTICAL_RAIL_CHROME = 80;
@@ -297,39 +331,42 @@ export function ThumbnailRail({
     );
   }
 
-  const list = (
-    <aside className="flex flex-col gap-2 px-3 pb-3">
-      <div className="-mx-3 sticky top-0 z-10 bg-sidebar px-4 pt-3 pb-1">
-        <div className="flex items-center justify-between gap-2">
-          <span className="eyebrow">{t.thumbnailRail.pages}</span>
-          <div className="flex items-center gap-1.5">
-            <span className="folio">{pad2(pages.length)}</span>
-            {onOverview && (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <button
-                      type="button"
-                      onClick={onOverview}
-                      aria-label={t.thumbnailRail.overviewAria}
-                      className={cn(
-                        'flex size-5 items-center justify-center rounded-[3px] text-muted-foreground/70 outline-none',
-                        'motion-safe:transition-colors hover:bg-muted hover:text-foreground',
-                        'focus-visible:ring-1 focus-visible:ring-brand',
-                      )}
-                    >
-                      <Grid2x2 className="size-3.5" strokeWidth={1.75} />
-                    </button>
-                  }
-                />
-                <TooltipContent side="bottom" sideOffset={6}>
-                  {t.thumbnailRail.overviewAria}
-                </TooltipContent>
-              </Tooltip>
-            )}
-          </div>
+  const header = (
+    <div className="shrink-0 px-4 pt-3 pb-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="eyebrow">{t.thumbnailRail.pages}</span>
+        <div className="flex items-center gap-1.5">
+          <span className="folio">{pad2(pages.length)}</span>
+          {onOverview && (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    onClick={onOverview}
+                    aria-label={t.thumbnailRail.overviewAria}
+                    className={cn(
+                      'flex size-5 items-center justify-center rounded-[3px] text-muted-foreground/70 outline-none',
+                      'motion-safe:transition-colors hover:bg-muted hover:text-foreground',
+                      'focus-visible:ring-1 focus-visible:ring-brand',
+                    )}
+                  >
+                    <Grid2x2 className="size-3.5" strokeWidth={1.75} />
+                  </button>
+                }
+              />
+              <TooltipContent side="bottom" sideOffset={6}>
+                {t.thumbnailRail.overviewAria}
+              </TooltipContent>
+            </Tooltip>
+          )}
         </div>
       </div>
+    </div>
+  );
+
+  const list = (
+    <aside className="px-3 pb-3">
       <VirtualThumbList
         pages={pages}
         current={current}
@@ -368,22 +405,25 @@ export function ThumbnailRail({
 
   return (
     <TooltipProvider delay={200}>
-      <div className="relative h-full">
-        <ScrollArea className="h-full bg-sidebar [&_[data-slot=scroll-area-scrollbar]]:z-20">
-          {scrollAreaContents}
-        </ScrollArea>
-        {currentPosition && (
-          <CurrentThumbnailButton
-            direction={currentPosition}
-            label={format(
-              currentPosition === 'above'
-                ? t.thumbnailRail.scrollUpToCurrentPage
-                : t.thumbnailRail.scrollDownToCurrentPage,
-              { n: current + 1 },
-            )}
-            onActivate={scrollToCurrent}
-          />
-        )}
+      <div className="flex h-full flex-col bg-sidebar">
+        {header}
+        <div className="relative min-h-0 flex-1">
+          <ScrollArea className="h-full [&_[data-slot=scroll-area-scrollbar]]:z-20">
+            {scrollAreaContents}
+          </ScrollArea>
+          {currentPosition && (
+            <CurrentThumbnailButton
+              direction={currentPosition}
+              label={format(
+                currentPosition === 'above'
+                  ? t.thumbnailRail.scrollUpToCurrentPage
+                  : t.thumbnailRail.scrollDownToCurrentPage,
+                { n: current + 1 },
+              )}
+              onActivate={scrollToCurrent}
+            />
+          )}
+        </div>
       </div>
     </TooltipProvider>
   );
@@ -427,9 +467,9 @@ function CurrentThumbnailButton({
               onActivate(true);
             }}
             className={cn(
-              'pointer-events-auto absolute left-1/2 z-30 -translate-x-1/2 bg-card/95 shadow-floating backdrop-blur-sm',
+              'pointer-events-auto absolute left-1/2 z-30 -translate-x-1/2 bg-material shadow-floating backdrop-blur-xl backdrop-saturate-150',
               'motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95 motion-safe:duration-150',
-              direction === 'above' ? 'top-10' : 'bottom-3',
+              direction === 'above' ? 'top-3' : 'bottom-3',
             )}
           >
             <Icon className="size-3.5" strokeWidth={1.75} aria-hidden />
@@ -539,10 +579,12 @@ function HorizontalVirtualThumbList({
   }, [current, itemWidth, pages.length, thumbWidth]);
 
   const visibleRange = clampVisibleRange(range, current, pages.length);
+  const commentCounts = usePageCommentCounts();
   const visible = [];
   for (let i = visibleRange.start; i < visibleRange.end; i++) {
     const PageComp = pages[i];
     const active = i === current;
+    const commentCount = commentCounts?.get(i) ?? 0;
     const button = (
       <button
         type="button"
@@ -552,7 +594,7 @@ function HorizontalVirtualThumbList({
         aria-label={format(t.thumbnailRail.goToPageAria, { n: i + 1 })}
         aria-current={active ? 'page' : undefined}
         className={cn(
-          'group/thumb relative flex shrink-0 flex-col items-center gap-1.5 rounded-[6px] outline-none motion-safe:transition-[scale] motion-safe:duration-100 active:scale-[0.985]',
+          'group/thumb relative flex shrink-0 flex-col items-center gap-1.5 rounded-[6px] text-left outline-none motion-safe:transition-[scale] motion-safe:duration-100 active:scale-[0.985]',
           'focus-visible:ring-1 focus-visible:ring-brand focus-visible:ring-offset-1 focus-visible:ring-offset-sidebar',
         )}
       >
@@ -579,6 +621,9 @@ function HorizontalVirtualThumbList({
             </SlidePageProvider>
           </SlideCanvas>
         </div>
+        {commentCount > 0 && (
+          <CommentCountBadge count={commentCount} className="absolute -top-0.5 -right-1" />
+        )}
       </button>
     );
 
@@ -815,6 +860,7 @@ function ThumbContents({
   }, [PageComp]);
 
   const hasTransition = Boolean(PageComp.transition ?? moduleTransition);
+  const commentCount = usePageCommentCounts()?.get(index) ?? 0;
 
   return (
     <>
@@ -827,6 +873,7 @@ function ThumbContents({
         >
           {pad2(index + 1)}
         </span>
+        {commentCount > 0 && <CommentCountBadge count={commentCount} />}
         {(hasTransition || hasSteps) && (
           <div className="flex flex-col items-end gap-0.5">
             {hasTransition && (
@@ -943,9 +990,18 @@ function SortableRail({
 
   const items = pages.map((_, i) => i + 1);
 
+  const overId = useRef<UniqueIdentifier | null>(null);
+
   const handleDragStart = (event: DragStartEvent) => {
+    overId.current = event.active.id;
     const i = (event.active.id as number) - 1;
     if (i >= 0) onSelect(i);
+  };
+
+  const handleDragOver = ({ over }: DragOverEvent) => {
+    if (!over || over.id === overId.current) return;
+    overId.current = over.id;
+    haptic('levelChange');
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -962,6 +1018,7 @@ function SortableRail({
       sensors={sensors}
       collisionDetection={closestCenter}
       onDragStart={handleDragStart}
+      onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
     >
       <SortableContext items={items} strategy={verticalListSortingStrategy}>

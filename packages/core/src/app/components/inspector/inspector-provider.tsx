@@ -1,4 +1,4 @@
-import { Eye, PanelRight, Pencil } from 'lucide-react';
+import { Eye, MessageSquare, PanelRight, Pencil } from 'lucide-react';
 import {
   createContext,
   type ReactNode,
@@ -12,24 +12,28 @@ import {
 import { toast } from 'sonner';
 import { useHistory } from '@/components/history-provider';
 import { IconSwitcherIndicator } from '@/components/icon-switcher-indicator';
+import { IconTooltip } from '@/components/icon-tooltip';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { TooltipTrigger } from '@/components/ui/tooltip';
 import { findSlideSource } from '@/lib/inspector/fiber';
 import {
   appendTextEdit,
   type TextEditOp,
   type TextEditStep,
 } from '@/lib/inspector/text-edit-timeline';
-import { type SlideComment, useComments } from '@/lib/inspector/use-comments';
+import { type AddCommentInput, type SlideComment, useComments } from '@/lib/inspector/use-comments';
 import { type Edit, type EditOp, useEditor } from '@/lib/inspector/use-editor';
 import { useInsertSnippet } from '@/lib/inspector/use-insert-snippet';
 import { useStepActions } from '@/lib/inspector/use-step-actions';
 import { useStructureActions } from '@/lib/inspector/use-structure-actions';
 import { type TextEditRefusal, useTextEditCheck } from '@/lib/inspector/use-text-edit-check';
 import { useVisualEditor, type VisualEdit } from '@/lib/inspector/use-visual-editor';
+import { independentTargets } from '@/lib/inspector/visual-dom';
 import { isShortcutControlTarget, isTypingTarget } from '@/lib/keys';
 import { textDiff } from '@/lib/text-diff';
-import { useLocale } from '@/lib/use-locale';
+import { createSaveQueue, createWriteLedger, trackWrite, useUnsavedSource } from '@/lib/unsaved';
+import { format, plural, useLocale } from '@/lib/use-locale';
 import { round2 } from '@/lib/utils';
 import { AssetPickerDialog } from './asset-picker-dialog';
 import { EditorShortcuts } from './editor-context-menu';
@@ -43,6 +47,7 @@ export type SelectedTarget = {
 };
 
 const INSTANCE_ID_ATTR = 'data-slide-instance-id';
+const REMOVED_ATTR = 'data-osd-removed';
 
 function elementPath(root: Element, el: Element): number[] | null {
   const path: number[] = [];
@@ -129,6 +134,10 @@ export type InlineEditTarget = SelectedTarget & {
 export type InlineTextSelection = { start: number; end: number };
 type InlineStyleHandler = (ops: EditOp[]) => boolean;
 
+// Shared across providers so a save retried after its provider unmounted skips
+// properties that a newer provider has saved since.
+const editLedger = createWriteLedger();
+
 type AssetAttrOp = { assetPath: string; previewUrl: string };
 type Sequenced<T> = T & { seq: number };
 type StyleOp = { value: string | null; prevText?: string };
@@ -150,6 +159,7 @@ type Bucket = {
   origTexts: Map<string /* instanceId */, { value: string }>;
   origHtmls: Map<string /* instanceId */, TextDomSnapshot>;
   origAttrs: Map<string, string | null>;
+  removed: boolean;
 };
 
 function createBucket(line: number, column: number): Bucket {
@@ -164,7 +174,24 @@ function createBucket(line: number, column: number): Bucket {
     origTexts: new Map(),
     origHtmls: new Map(),
     origAttrs: new Map(),
+    removed: false,
   };
+}
+
+function bucketIsEmpty(bucket: Bucket): boolean {
+  return (
+    bucket.styleOps.size === 0 &&
+    bucket.textEdits.size === 0 &&
+    bucket.attrOps.size === 0 &&
+    !bucket.removed
+  );
+}
+
+function hasBufferedOps(buckets: Map<string, Bucket>): boolean {
+  for (const b of buckets.values()) {
+    if (!bucketIsEmpty(b)) return true;
+  }
+  return false;
 }
 
 export type DomTextPart = {
@@ -345,7 +372,21 @@ function captureTextDom(
   el: HTMLElement,
   whiteSpace: WhiteSpaceResolver = computedWhiteSpace,
 ): TextDomSnapshot {
-  return { html: el.innerHTML, whiteSpaces: textSnapshotElements(el).map(whiteSpace) };
+  return {
+    html: htmlWithoutRemovalMarkers(el),
+    whiteSpaces: textSnapshotElements(el).map(whiteSpace),
+  };
+}
+
+// Removal markers are pending preview state; a snapshot that kept them would
+// re-hide a child on cancel, undo, or replay after its removal was dropped.
+function htmlWithoutRemovalMarkers(el: HTMLElement): string {
+  if (!el.querySelector(`[${REMOVED_ATTR}]`)) return el.innerHTML;
+  const clone = el.cloneNode(true) as HTMLElement;
+  for (const marked of clone.querySelectorAll(`[${REMOVED_ATTR}]`)) {
+    marked.removeAttribute(REMOVED_ATTR);
+  }
+  return clone.innerHTML;
 }
 
 function textEditHtml(snapshot: TextDomSnapshot, steps: TextEditStep[]): TextDomSnapshot {
@@ -373,9 +414,17 @@ function replayDomTextEdits(el: HTMLElement, snapshot: TextDomSnapshot, steps: T
   if (el.innerHTML !== next) el.innerHTML = next;
 }
 
+export type InspectorMode = 'preview' | 'edit' | 'comment';
+
 type InspectorCtx = {
   slideId: string;
+  pageIndex: number;
+  mode: InspectorMode;
+  setMode: (mode: InspectorMode) => void;
+  // True while the visual editor owns the canvas (`mode === 'edit'`).
   active: boolean;
+  commentMode: boolean;
+  exitCommentMode: () => void;
   toggle: () => void;
   panelOpen: boolean;
   panelHidden: boolean;
@@ -383,7 +432,8 @@ type InspectorCtx = {
   cancel: () => void;
   comments: SlideComment[];
   error: string | null;
-  add: (line: number, column: number, text: string) => Promise<void>;
+  add: (input: AddCommentInput) => Promise<void>;
+  update: (id: string, text: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
   selection: SelectedTarget[];
   setSelection: (targets: SelectedTarget[]) => void;
@@ -429,6 +479,10 @@ export function useInspector(): InspectorCtx {
   return v;
 }
 
+export function useOptionalInspector(): InspectorCtx | null {
+  return useContext(Ctx);
+}
+
 export function InspectorProvider({
   slideId,
   pageIndex,
@@ -442,7 +496,11 @@ export function InspectorProvider({
   onPanelOpen?: () => void;
   children: ReactNode;
 }) {
-  const [active, setActive] = useState(import.meta.env.DEV);
+  const [mode, setModeState] = useState<InspectorMode>(import.meta.env.DEV ? 'edit' : 'preview');
+  const active = mode === 'edit';
+  const commentMode = mode === 'comment';
+  // Where Esc / toggling the comment tool off returns the user to.
+  const modeBeforeCommentRef = useRef<Exclude<InspectorMode, 'comment'>>('preview');
   const [panelOpen, setPanelOpen] = useState(
     () => typeof window !== 'undefined' && window.innerWidth >= 1024,
   );
@@ -488,7 +546,7 @@ export function InspectorProvider({
     [],
   );
   const [opsVersion, setOpsVersion] = useState(0);
-  const { comments, error, add, remove } = useComments(slideId);
+  const { comments, error, add, update, remove } = useComments(slideId);
   const { applyEdit, applyEdits } = useEditor(slideId);
   const history = useHistory();
 
@@ -497,7 +555,8 @@ export function InspectorProvider({
     new WeakMap<HTMLElement, { text: string; html: TextDomSnapshot }>(),
   );
   const instanceCounterRef = useRef(0);
-  const pendingSeqRef = useRef(0);
+  const [commitQueue] = useState(createSaveQueue);
+  const commitFailureRef = useRef<string | null>(null);
   const [pendingCount, setPendingCount] = useState(0);
   const [committing, setCommitting] = useState(false);
   const [cropTarget, setCropTarget] = useState<{
@@ -529,9 +588,7 @@ export function InspectorProvider({
   const refreshCount = useCallback(() => {
     let n = 0;
     for (const b of pendingRef.current.values()) {
-      if (b.styleOps.size > 0 || b.textEdits.size > 0 || b.attrOps.size > 0) {
-        n++;
-      }
+      if (!bucketIsEmpty(b)) n++;
     }
     setPendingCount(n);
     setOpsVersion((v) => v + 1);
@@ -617,12 +674,16 @@ export function InspectorProvider({
         pendingRef.current.set(key, bucket);
       }
       const style = (anchor?.style ?? {}) as unknown as Record<string, string>;
+      // Every key is read before any is written: clearing a shorthand such as
+      // `background` also clears the longhands a later op in the batch sets.
       for (const op of ops) {
-        const seq = ++pendingSeqRef.current;
+        if (op.kind === 'set-style' && anchor && !bucket.origStyle.has(op.key)) {
+          bucket.origStyle.set(op.key, style[op.key] ?? '');
+        }
+      }
+      for (const op of ops) {
+        const seq = editLedger.next();
         if (op.kind === 'set-style') {
-          if (anchor && !bucket.origStyle.has(op.key)) {
-            bucket.origStyle.set(op.key, style[op.key] ?? '');
-          }
           bucket.styleOps.set(op.key, { value: op.value, prevText: op.prevText, seq });
           if (anchor?.isConnected) style[op.key] = op.value ?? '';
         } else if (op.kind === 'set-text-range-style' || op.kind === 'set-text') {
@@ -812,7 +873,7 @@ export function InspectorProvider({
         } else if (snap.kind === 'attr') {
           if (snap.source === 'op') {
             const op = snap.value as Sequenced<AssetAttrOp>;
-            bucket.attrOps.set(snap.attr, { ...op, seq: ++pendingSeqRef.current });
+            bucket.attrOps.set(snap.attr, { ...op, seq: editLedger.next() });
             if (sharedAnchor?.isConnected) sharedAnchor.setAttribute(snap.attr, op.previewUrl);
           } else {
             bucket.attrOps.delete(snap.attr);
@@ -824,9 +885,7 @@ export function InspectorProvider({
           }
         }
       }
-      if (bucket.styleOps.size === 0 && bucket.textEdits.size === 0 && bucket.attrOps.size === 0) {
-        pendingRef.current.delete(key);
-      }
+      if (bucketIsEmpty(bucket)) pendingRef.current.delete(key);
       refreshCount();
     },
     [findAnchor, findTextAnchor, refreshCount],
@@ -938,12 +997,67 @@ export function InspectorProvider({
     ],
   );
 
+  // Every DOM instance of the loc hides: removal edits the shared JSX, so
+  // `.map()` items and reused components all disappear on save.
+  const setRemovedRaw = useCallback(
+    (line: number, column: number, removed: boolean) => {
+      const key = `${line}:${column}`;
+      let bucket = pendingRef.current.get(key);
+      if (!bucket) {
+        if (!removed) return;
+        bucket = createBucket(line, column);
+        pendingRef.current.set(key, bucket);
+      }
+      bucket.removed = removed;
+      const root = document.querySelector<HTMLElement>('[data-inspector-root]');
+      for (const el of root?.querySelectorAll(`[data-slide-loc="${key}"]`) ?? []) {
+        el.toggleAttribute(REMOVED_ATTR, removed);
+      }
+      if (bucketIsEmpty(bucket)) pendingRef.current.delete(key);
+      refreshCount();
+    },
+    [refreshCount],
+  );
+
+  const removeElements = useCallback(
+    (targets: SelectedTarget[]) => {
+      if (committing) return;
+      const unique = new Map<string, SelectedTarget>();
+      for (const target of independentTargets(targets)) {
+        const hit = findSlideSource(target.anchor, slideId, { hostOnly: true }) ?? target;
+        const key = `${hit.line}:${hit.column}`;
+        if (!pendingRef.current.get(key)?.removed) unique.set(key, hit);
+      }
+      const removed = [...unique.values()];
+      if (!removed.length) return;
+      const reveal = removed.map(captureRevealTarget);
+      const apply = (value: boolean) => {
+        for (const target of removed) setRemovedRaw(target.line, target.column, value);
+      };
+      apply(true);
+      setSelection([]);
+      history.record({
+        pageIndex,
+        undo: () => {
+          apply(false);
+          revealTargets(reveal, pageIndex);
+        },
+        redo: () => {
+          apply(true);
+          setSelection([]);
+        },
+      });
+    },
+    [committing, slideId, setRemovedRaw, setSelection, history, pageIndex, revealTargets],
+  );
+
   const visual = useVisualEditor({
     committing,
     slideId,
     selection,
     setSelection,
     bufferBatch,
+    removeElements,
   });
 
   const sourceEditLock = useRef(false);
@@ -1001,23 +1115,38 @@ export function InspectorProvider({
     [],
   );
 
-  const commitEdits = useCallback(async () => {
+  const writeEdits = useCallback(async () => {
     const buckets = pendingRef.current;
+    commitFailureRef.current = null;
     if (buckets.size === 0) return;
     type PendingItem = {
       bucket: Bucket;
       seq: number;
       instanceId?: string;
+      property?: string;
       edit: Edit;
       onSuccess: (bucket: Bucket) => void;
     };
     const pending: PendingItem[] = [];
     for (const bucket of buckets.values()) {
       const { line, column, styleOps, textEdits, attrOps } = bucket;
+      if (bucket.removed) {
+        pending.push({
+          bucket,
+          // Removals go last so edits inside the removed element don't fail
+          // with "target was removed by an earlier edit".
+          seq: Number.MAX_SAFE_INTEGER,
+          edit: { line, column, ops: [{ kind: 'remove-element' }] },
+          onSuccess: (b) => {
+            b.removed = false;
+          },
+        });
+      }
       for (const [k, op] of styleOps) {
         pending.push({
           bucket,
           seq: op.seq,
+          property: `${slideId}\n${line}:${column}\nstyle:${k}`,
           edit: {
             line,
             column,
@@ -1033,6 +1162,7 @@ export function InspectorProvider({
         pending.push({
           bucket,
           seq: op.seq,
+          property: `${slideId}\n${line}:${column}\nattr:${attr}`,
           edit: {
             line,
             column,
@@ -1078,14 +1208,27 @@ export function InspectorProvider({
         }
       }
     }
-    pending.sort((a, b) => a.seq - b.seq);
+    const settle = (item: PendingItem) => {
+      item.onSuccess(item.bucket);
+      if (item.property) editLedger.record(item.property, item.seq);
+      if (!bucketIsEmpty(item.bucket)) return;
+      for (const [key, pendingBucket] of pendingRef.current) {
+        if (pendingBucket === item.bucket) pendingRef.current.delete(key);
+      }
+    };
+    const writes = pending.filter((item) => {
+      if (!item.property || !editLedger.superseded(item.property, item.seq)) return true;
+      settle(item);
+      return false;
+    });
+    writes.sort((a, b) => a.seq - b.seq);
     const lastTextEdit = new Map<string, number>();
-    for (const [index, item] of pending.entries()) {
+    for (const [index, item] of writes.entries()) {
       if (!item.instanceId) continue;
       item.edit.dependsOn = lastTextEdit.get(item.instanceId);
       lastTextEdit.set(item.instanceId, index);
     }
-    if (pending.length === 0) {
+    if (writes.length === 0) {
       pendingRef.current = new Map();
       setPendingCount(0);
       history.clear();
@@ -1093,38 +1236,35 @@ export function InspectorProvider({
     }
     setCommitting(true);
     try {
-      const results = await applyEdits(pending.map((p) => p.edit));
+      const results = await applyEdits(writes.map((p) => p.edit));
       const failures: string[] = [];
       for (let i = 0; i < results.length; i++) {
-        const item = pending[i];
+        const item = writes[i];
         const r = results[i];
-        const bucket = item.bucket;
         if (r.ok) {
-          item.onSuccess(bucket);
-          if (
-            bucket.styleOps.size === 0 &&
-            bucket.textEdits.size === 0 &&
-            bucket.attrOps.size === 0
-          ) {
-            for (const [key, pendingBucket] of pendingRef.current) {
-              if (pendingBucket === bucket) pendingRef.current.delete(key);
-            }
-          }
+          settle(item);
         } else {
           failures.push(`line ${item.edit.line}: ${r.error ?? 'edit failed'}`);
         }
       }
       refreshCount();
-      if (failures.length > 0) toast.error(`${t.inspector.saveFailed} ${failures.join('; ')}`);
+      if (failures.length > 0) {
+        commitFailureRef.current = `${t.inspector.saveFailed} ${failures.join('; ')}`;
+        toast.error(commitFailureRef.current);
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      toast.error(`${t.inspector.saveFailed} ${msg}`);
+      commitFailureRef.current = `${t.inspector.saveFailed} ${msg}`;
+      toast.error(commitFailureRef.current);
       throw err;
     } finally {
       setCommitting(false);
       history.clear();
     }
-  }, [applyEdits, history, refreshCount, t]);
+  }, [applyEdits, history, refreshCount, slideId, t]);
+
+  // Two commits in flight would send the same buffered ops twice.
+  const commitEdits = useCallback(() => commitQueue.run(writeEdits), [commitQueue, writeEdits]);
 
   const cancelEdits = useCallback(() => {
     if (pendingRef.current.size === 0) {
@@ -1154,11 +1294,22 @@ export function InspectorProvider({
         if (textEl?.isConnected) setEditableText(textEl, orig.value);
       }
     }
+    for (const el of root?.querySelectorAll(`[${REMOVED_ATTR}]`) ?? []) {
+      el.removeAttribute(REMOVED_ATTR);
+    }
     pendingRef.current = new Map();
     setPendingCount(0);
     setOpsVersion((version) => version + 1);
     history.clear();
   }, [history]);
+
+  // Rejects while any edit is still buffered, even when only some of them failed.
+  const saveEdits = async () => {
+    await commitEdits().catch(() => {});
+    if (hasBufferedOps(pendingRef.current)) {
+      throw new Error(commitFailureRef.current ?? t.inspector.saveFailed);
+    }
+  };
 
   // Auto-flush on inspector close and on route unmount so toggling
   // off or navigating away doesn't drop buffered edits. Failures are
@@ -1166,14 +1317,22 @@ export function InspectorProvider({
   // swallows the rethrown rejection.
   const commitRef = useRef(commitEdits);
   commitRef.current = commitEdits;
+  const saveRef = useRef(saveEdits);
+  saveRef.current = saveEdits;
   useEffect(() => {
     if (!active) commitRef.current().catch(() => {});
   }, [active]);
+  // Nothing else reports the edits once this unmounts.
   useEffect(() => {
-    return () => {
-      commitRef.current().catch(() => {});
-    };
+    return () => trackWrite(pendingRef, () => saveRef.current());
   }, []);
+
+  useUnsavedSource({
+    kind: 'draft',
+    dirty: () => commitQueue.busy() || hasBufferedOps(pendingRef.current),
+    save: saveEdits,
+    discard: cancelEdits,
+  });
 
   // Re-apply buffered ops onto any `[data-slide-loc]` element that gets
   // (re)mounted in the slide canvas. Without this, navigating to a
@@ -1197,6 +1356,7 @@ export function InspectorProvider({
       for (const [attr, op] of bucket.attrOps) {
         if (el.getAttribute(attr) !== op.previewUrl) el.setAttribute(attr, op.previewUrl);
       }
+      if (bucket.removed && !el.hasAttribute(REMOVED_ATTR)) el.setAttribute(REMOVED_ATTR, '');
     };
 
     let observer: MutationObserver | null = null;
@@ -1318,19 +1478,32 @@ export function InspectorProvider({
     return () => observer.disconnect();
   }, [selection, setSelection, slideId]);
 
+  const setMode = useCallback(
+    (next: InspectorMode) => {
+      if (next === mode) return;
+      if (next === 'comment' && mode !== 'comment') modeBeforeCommentRef.current = mode;
+      if (mode === 'edit') {
+        setSelected(null);
+        setInlineEdit(null);
+      }
+      setModeState(next);
+    },
+    [mode, setSelected],
+  );
+
   const toggle = useCallback(() => {
-    if (active) {
-      setSelected(null);
-      setInlineEdit(null);
-    }
-    setActive(!active);
-  }, [active, setSelected]);
+    setMode(active ? 'preview' : 'edit');
+  }, [active, setMode]);
+
+  const exitCommentMode = useCallback(() => {
+    if (commentMode) setMode(modeBeforeCommentRef.current);
+  }, [commentMode, setMode]);
 
   const togglePanel = useCallback(() => {
     setPanelOpen(!active || panelHidden || !panelOpen);
-    setActive(true);
+    setMode('edit');
     onPanelOpen?.();
-  }, [active, panelHidden, panelOpen, onPanelOpen]);
+  }, [active, panelHidden, panelOpen, onPanelOpen, setMode]);
 
   const cancel = useCallback(() => {
     setSelected(null);
@@ -1419,13 +1592,24 @@ export function InspectorProvider({
         e.altKey
       )
         return;
-      if (e.key !== 'i' && e.key !== 'I') return;
-      e.preventDefault();
-      togglePanel();
+      if (e.key === 'i' || e.key === 'I') {
+        e.preventDefault();
+        togglePanel();
+      } else if (e.key === 'c' || e.key === 'C') {
+        e.preventDefault();
+        if (commentMode) exitCommentMode();
+        else setMode('comment');
+      } else if (e.key === 'v' || e.key === 'V') {
+        e.preventDefault();
+        setMode('preview');
+      } else if (e.key === 'e' || e.key === 'E') {
+        e.preventDefault();
+        setMode('edit');
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [togglePanel]);
+  }, [togglePanel, commentMode, exitCommentMode, setMode]);
 
   const openCrop = useCallback((anchor: HTMLImageElement) => {
     const loc = anchor.dataset.slideLoc;
@@ -1451,7 +1635,12 @@ export function InspectorProvider({
   const value = useMemo<InspectorCtx>(
     () => ({
       slideId,
+      pageIndex,
+      mode,
+      setMode,
       active,
+      commentMode,
+      exitCommentMode,
       toggle,
       panelOpen,
       panelHidden,
@@ -1460,6 +1649,7 @@ export function InspectorProvider({
       comments,
       error,
       add,
+      update,
       remove,
       selection,
       setSelection,
@@ -1491,7 +1681,12 @@ export function InspectorProvider({
     }),
     [
       slideId,
+      pageIndex,
+      mode,
+      setMode,
       active,
+      commentMode,
+      exitCommentMode,
       toggle,
       panelOpen,
       panelHidden,
@@ -1500,6 +1695,7 @@ export function InspectorProvider({
       comments,
       error,
       add,
+      update,
       remove,
       selection,
       setSelection,
@@ -1662,44 +1858,63 @@ function parsePercent(s: string, fallback: number): number {
 
 export function InspectModeSwitcher() {
   const t = useLocale();
-  const { active, toggle } = useInspector();
+  const { mode, setMode, comments } = useInspector();
   if (import.meta.env.PROD) return null;
+  const items: { value: InspectorMode; label: string; shortcut: string; icon: ReactNode }[] = [
+    { value: 'preview', label: t.inspector.previewMode, shortcut: 'V', icon: <Eye /> },
+    { value: 'edit', label: t.inspector.editMode, shortcut: 'E', icon: <Pencil /> },
+    { value: 'comment', label: t.inspector.commentMode, shortcut: 'C', icon: <MessageSquare /> },
+  ];
+  const index = Math.max(
+    0,
+    items.findIndex((item) => item.value === mode),
+  );
+  const pending = comments.length;
+  const accessibleName = (item: (typeof items)[number]) =>
+    item.value === 'comment' && pending > 0
+      ? `${item.label} · ${format(plural(pending, t.inspector.commentsCount), { count: pending })}`
+      : item.label;
   return (
     <ToggleGroup
       size="sm"
       spacing={1}
-      value={[active ? 'edit' : 'preview']}
+      value={[mode]}
       onValueChange={(value) => {
-        const next = value[0];
-        if (next && (next === 'edit') !== active) toggle();
+        const next = value[0] as InspectorMode | undefined;
+        if (next && next !== mode) setMode(next);
       }}
-      aria-label={`${t.inspector.previewMode} / ${t.inspector.editMode}`}
+      aria-label={`${t.inspector.previewMode} / ${t.inspector.editMode} / ${t.inspector.commentMode}`}
       data-inspector-ui
       className="relative isolate h-8 gap-0 rounded-lg border border-border/70 bg-muted/70 p-0.5"
     >
-      <IconSwitcherIndicator index={active ? 1 : 0} />
-      <ToggleGroupItem
-        value="preview"
-        title={t.inspector.previewMode}
-        aria-label={t.inspector.previewMode}
-        onClick={(event) => {
-          if (event.detail > 0) event.currentTarget.blur();
-        }}
-        className="relative z-10 h-full w-8 rounded-md px-0 text-muted-foreground hover:bg-transparent data-pressed:bg-transparent data-pressed:text-foreground data-pressed:shadow-none"
-      >
-        <Eye />
-      </ToggleGroupItem>
-      <ToggleGroupItem
-        value="edit"
-        title={t.inspector.editMode}
-        aria-label={t.inspector.editMode}
-        onClick={(event) => {
-          if (event.detail > 0) event.currentTarget.blur();
-        }}
-        className="relative z-10 h-full w-8 rounded-md px-0 text-muted-foreground hover:bg-transparent data-pressed:bg-transparent data-pressed:text-foreground data-pressed:shadow-none"
-      >
-        <Pencil />
-      </ToggleGroupItem>
+      <IconSwitcherIndicator index={index} />
+      {items.map((item) => (
+        <IconTooltip key={item.value} label={item.label} shortcut={item.shortcut}>
+          <TooltipTrigger
+            render={
+              <ToggleGroupItem
+                value={item.value}
+                aria-label={accessibleName(item)}
+                data-inspector-mode={item.value}
+                onClick={(event) => {
+                  if (event.detail > 0) event.currentTarget.blur();
+                }}
+                className="relative z-10 h-full w-8 rounded-md px-0 text-muted-foreground hover:bg-transparent data-pressed:bg-transparent data-pressed:text-foreground data-pressed:shadow-none"
+              />
+            }
+          >
+            {item.icon}
+            {item.value === 'comment' && pending > 0 && (
+              <span
+                aria-hidden
+                className="pointer-events-none absolute -top-1.5 -right-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-brand px-1 font-mono text-[9px] font-semibold leading-none text-brand-foreground nums"
+              >
+                {pending > 99 ? '99+' : pending}
+              </span>
+            )}
+          </TooltipTrigger>
+        </IconTooltip>
+      ))}
     </ToggleGroup>
   );
 }

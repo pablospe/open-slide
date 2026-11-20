@@ -1,5 +1,39 @@
 # @open-slide/core
 
+## 2.3.2
+
+### Patch Changes
+
+- [#609](https://github.com/open-slide/open-slide/pull/609) [`034b070`](https://github.com/open-slide/open-slide/commit/034b07032f81ec6e9692f2463cdcb88b77a5d893) Thanks [@huntie](https://github.com/huntie)! - Keep slide text left-aligned in the overview grid and every other thumbnail instead of inheriting the host's alignment.
+
+- [#588](https://github.com/open-slide/open-slide/pull/588) [`d12e3e1`](https://github.com/open-slide/open-slide/commit/d12e3e1d8b208d326f3fce370e42bede3fb96b74) Thanks [@1weiho](https://github.com/1weiho)! - Show New deck before an agent is connected, so first-time users can create a deck and install an agent from the panel.
+
+- [#599](https://github.com/open-slide/open-slide/pull/599) [`2f7edd0`](https://github.com/open-slide/open-slide/commit/2f7edd01405e3da1d63d603ce4efe09568da3e97) Thanks [@Ruxiu0409](https://github.com/Ruxiu0409)! - Keep slide text left-aligned in the mobile thumbnail strip instead of inheriting the button's centered alignment.
+
+- [#589](https://github.com/open-slide/open-slide/pull/589) [`557b56e`](https://github.com/open-slide/open-slide/commit/557b56e277277ff16860eb7398fffae962866f0c) Thanks [@1weiho](https://github.com/1weiho)! - Fade to black when entering and leaving present mode, and nudge the slide with a hint when stepping past the last slide.
+
+## 2.3.1
+
+### Patch Changes
+
+- [#574](https://github.com/open-slide/open-slide/pull/574) [`8b67b02`](https://github.com/open-slide/open-slide/commit/8b67b0257d1f23138afcd640aaa0e0a468bd5f7c) Thanks [@1weiho](https://github.com/1weiho)! - Ship the agent modules the app imports so `open-slide dev` no longer fails to resolve `agent/types`, and stop publishing test files.
+
+## 2.3.0
+
+### Minor Changes
+
+- [#567](https://github.com/open-slide/open-slide/pull/567) [`c93ca36`](https://github.com/open-slide/open-slide/commit/c93ca36f2463cdf0fc47dc91fda2bea8c2a3d030) Thanks [@1weiho](https://github.com/1weiho)! - Add an in-app agent panel that uses a locally installed Claude Code or Codex to draft decks, apply comments, and edit pages.
+
+### Patch Changes
+
+- [#559](https://github.com/open-slide/open-slide/pull/559) [`4081bf9`](https://github.com/open-slide/open-slide/commit/4081bf973db1c4b81b2772fafa66f93004c98bde) Thanks [@1weiho](https://github.com/1weiho)! - Keep letterbox bars black in present mode when the screen isn't 16:9.
+
+## 2.2.0
+
+### Minor Changes
+
+- [#556](https://github.com/open-slide/open-slide/pull/556) [`92d58d7`](https://github.com/open-slide/open-slide/commit/92d58d7a3b4a50476689af58240649e99bf83be6) Thanks [@1weiho](https://github.com/1weiho)! - Move comments into a toolbar comment mode: click an element or drag across a region, write the note in a floating composer, and see every pending comment as a numbered pin beside its target.
+
 ## 2.1.0
 
 ### Minor Changes

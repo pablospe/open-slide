@@ -14,6 +14,7 @@ import {
   MoreHorizontal,
   Play,
   Presentation,
+  Sparkles,
   Terminal,
 } from 'lucide-react';
 import {
@@ -21,15 +22,19 @@ import {
   type RefObject,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
+import { AgentToggleButton } from '@/components/agent/agent-dock';
+import { AgentPanel } from '@/components/agent/agent-panel';
+import { AgentPresence } from '@/components/agent/agent-presence';
 import { AssetView } from '@/components/asset-view';
 import { HistoryProvider } from '@/components/history-provider';
-import { CommentWidget } from '@/components/inspector/comment-widget';
+import { CommentLayer } from '@/components/inspector/comment-layer';
 import { EditorContextMenu } from '@/components/inspector/editor-context-menu';
 import { InlineEditLayer } from '@/components/inspector/inline-text-editor';
 import { InspectOverlay } from '@/components/inspector/inspect-overlay';
@@ -41,6 +46,7 @@ import {
 } from '@/components/inspector/inspector-provider';
 import { SaveBar } from '@/components/inspector/save-bar';
 import { EditorSidebar } from '@/components/panel/editor-sidebar';
+import { ResizeHandle, useStoredWidth } from '@/components/panel/resize-handle';
 import { DesignProvider } from '@/components/style-panel/design-provider';
 import { DesignToggleButton } from '@/components/style-panel/style-panel';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -57,7 +63,13 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  setDockOpen,
+  useAgentActivity,
+  useAgentDock,
+  useSessionHandoff,
+} from '@/lib/agent/use-agent';
+import { openHomeInHost } from '@/lib/desktop';
 import { useFolders } from '@/lib/folders';
 import { summarizeElement } from '@/lib/inspector/source-location';
 import {
@@ -68,7 +80,6 @@ import {
   isTypingTarget,
 } from '@/lib/keys';
 import { readLastHomeLocation } from '@/lib/last-home-location';
-import { useAgentSocketConnected } from '@/lib/use-agent-socket';
 import { useClickPageNavigation } from '@/lib/use-click-page-navigation';
 import { useDocumentTitle } from '@/lib/use-document-title';
 import { useIsMobile } from '@/lib/use-is-mobile';
@@ -76,11 +87,18 @@ import { format, useLocale } from '@/lib/use-locale';
 import { useMediaQuery } from '@/lib/use-media-query';
 import { useWheelPageNavigation } from '@/lib/use-wheel-page-navigation';
 import { cn } from '@/lib/utils';
+import type { AgentTurnContext } from '../../agent/types';
 import { SlideCommandMenu } from '../components/command/slide-command-menu';
 import { PdfProgressToast, PptxProgressToast } from '../components/export-progress-toast';
 import { NotesDrawer } from '../components/notes-drawer';
 import { OverviewGrid } from '../components/overview-grid';
 import { openPresenterWindow, Player } from '../components/player';
+import {
+  afterPaint,
+  CURTAIN_FADE_MS,
+  PresentCurtain,
+  whenFullscreenSettled,
+} from '../components/present/curtain';
 import { SlideCanvas } from '../components/slide-canvas';
 import { isDeckWarmed, markDeckWarmed, SlidePreloadLayer } from '../components/slide-preload-layer';
 import { SlideTransitionLayer } from '../components/slide-transition-layer';
@@ -92,7 +110,7 @@ import {
   exportSlideAsPptx,
   type PptxExportProgress,
 } from '../lib/export-pptx';
-import { remapNotesSessionCacheAfterReorder } from '../lib/inspector/use-notes';
+import { changeNotesPages } from '../lib/inspector/use-notes';
 import type { Page, SlideModule } from '../lib/sdk';
 import { usePrefersReducedMotion } from '../lib/use-prefers-reduced-motion';
 import { useSlideModule } from '../lib/use-slide-module';
@@ -100,6 +118,16 @@ import { useSlideModule } from '../lib/use-slide-module';
 const { showSlideUi, showSlideBrowser, allowHtmlDownload } = config.build;
 
 const noop = () => {};
+
+type PagePlan = {
+  // `order[i]` is the page that lands at position `i`; -1 stands for a page that
+  // has no source index yet (a blank page being added).
+  order: number[];
+  request: string;
+  init: RequestInit;
+  // Page to show once the change is applied; defaults to following the current one.
+  show?: number;
+};
 
 // Stands in for the new page until the dev server's HMR update delivers the
 // real component written to index.tsx.
@@ -112,6 +140,7 @@ export function Slide() {
   // react-router records its entry index in history.state; going back is only
   // safe when we actually pushed an entry, otherwise land on the last home view.
   const goBack = useCallback(() => {
+    if (openHomeInHost()) return;
     const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0;
     if (idx > 0) {
       navigate(-1);
@@ -138,6 +167,14 @@ export function Slide() {
   const [designOpen, setDesignOpen] = useState(false);
   const [overviewOpen, setOverviewOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
+  const { open: agentOpen, toggle: toggleAgent } = useAgentDock();
+  useSessionHandoff(slideId);
+  useLayoutEffect(() => {
+    if (agentOpen) setDesignOpen(false);
+  }, [agentOpen]);
+  useLayoutEffect(() => {
+    if (designOpen) setDockOpen(false);
+  }, [designOpen]);
   const [, setWarmedTick] = useState(0);
   const handleAssetsWarmed = useCallback(() => {
     markDeckWarmed(slideId);
@@ -157,11 +194,65 @@ export function Slide() {
   const narrowToolbar = useMediaQuery('(max-width: 639.98px)');
   const prefersReducedMotion = usePrefersReducedMotion();
 
-  const modulePages = useMemo(() => slide?.default ?? [], [slide]);
-  const [pages, setPages] = useState<typeof modulePages>(modulePages);
+  // 'entering' darkens the editor before the Player mounts; 'leaving' keeps
+  // the editor dark after the Player unmounts, then fades it back in.
+  const [curtain, setCurtain] = useState<'entering' | 'leaving' | null>(null);
+  const curtainTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (curtainTimerRef.current) clearTimeout(curtainTimerRef.current);
+    },
+    [],
+  );
+  const present = useCallback(
+    (mode: 'window' | 'fullscreen') => {
+      if (prefersReducedMotion) {
+        setPlayMode(mode);
+        return;
+      }
+      if (curtainTimerRef.current) return;
+      setCurtain('entering');
+      // Fullscreen is requested when the Player mounts; the delay stays well
+      // inside the browser's transient user-activation window.
+      curtainTimerRef.current = setTimeout(() => {
+        curtainTimerRef.current = null;
+        setCurtain(null);
+        setPlayMode(mode);
+      }, CURTAIN_FADE_MS);
+    },
+    [prefersReducedMotion],
+  );
+  const exitPresent = useCallback(() => {
+    setPlayMode(null);
+    if (!prefersReducedMotion) setCurtain('leaving');
+  }, [prefersReducedMotion]);
   useEffect(() => {
-    setPages(modulePages);
+    if (curtain !== 'leaving' || playMode) return;
+    let cancelPaint = () => {};
+    const reveal = () => {
+      cancelPaint = afterPaint(() => setCurtain(null));
+    };
+    if (!document.fullscreenElement) {
+      reveal();
+      return () => cancelPaint();
+    }
+    const cancelWait = whenFullscreenSettled(reveal);
+    return () => {
+      cancelWait();
+      cancelPaint();
+    };
+  }, [curtain, playMode]);
+
+  const routedRef = useRef(slideId);
+  routedRef.current = slideId;
+  const modulePages = useMemo(() => slide?.default ?? [], [slide]);
+  // Tagged with its deck: right after a route change the old deck's module is
+  // still loaded under the new slideId.
+  const [deck, setDeck] = useState({ slideId, pages: modulePages });
+  useEffect(() => {
+    setDeck({ slideId: routedRef.current, pages: modulePages });
   }, [modulePages]);
+  const pages = deck.pages;
   const pageCount = pages.length;
   const rawIndex = Number(searchParams.get('p') ?? '1') - 1;
   const index = Number.isFinite(rawIndex) ? Math.max(0, Math.min(pageCount - 1, rawIndex)) : 0;
@@ -186,115 +277,125 @@ export function Slide() {
     [navigate],
   );
 
-  const goTo = useCallback(
+  const showPage = useCallback(
     (i: number) => {
-      const clamped = Math.max(0, Math.min(pageCount - 1, i));
       setSearchParams(
         (prev) => {
           const next = new URLSearchParams(prev);
-          next.set('p', String(clamped + 1));
+          next.set('p', String(i + 1));
           return next;
         },
         { replace: true },
       );
     },
-    [pageCount, setSearchParams],
+    [setSearchParams],
+  );
+
+  const goTo = useCallback(
+    (i: number) => showPage(Math.max(0, Math.min(pageCount - 1, i))),
+    [pageCount, showPage],
+  );
+
+  // While an agent writes this deck page by page, jump to each page as it
+  // lands so the user can follow along.
+  const agentActivity = useAgentActivity(slideId);
+  const agentWriting = agentActivity !== null;
+  const seenPageCount = useRef(pageCount);
+  useEffect(() => {
+    if (agentWriting && pageCount > seenPageCount.current) goTo(pageCount - 1);
+    seenPageCount.current = pageCount;
+  }, [agentWriting, pageCount, goTo]);
+
+  const deckRef = useRef(deck);
+  deckRef.current = deck;
+  const indexRef = useRef(index);
+  indexRef.current = index;
+
+  // Notes can be mid-save when a page op is asked for, so the op is planned from
+  // the pages and position current once those writes settle, and dropped if the
+  // route has moved to another deck by then.
+  const changePages = useCallback(
+    (plan: (order: number[]) => PagePlan | null) =>
+      changeNotesPages(slideId, () => {
+        const { slideId: owner, pages: before } = deckRef.current;
+        if (routedRef.current !== slideId || owner !== slideId) return null;
+        const at = indexRef.current;
+        const next = plan(before.map((_, i) => i));
+        if (!next) return null;
+        const moved = next.order.map((i) => (i < 0 ? BlankPage : before[i]));
+        const position = next.order.indexOf(at);
+        const nextIndex =
+          next.show ?? (position < 0 ? Math.min(at, next.order.length - 1) : position);
+        return {
+          order: next.order,
+          apply: async () => {
+            setDeck({ slideId, pages: moved });
+            if (nextIndex !== at) showPage(nextIndex);
+            const res = await fetch(next.request, next.init);
+            const body = (await res.json().catch(() => ({ error: res.statusText }))) as {
+              error?: string;
+              layout?: string;
+            };
+            if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+            return body.layout;
+          },
+          revert: () => {
+            setDeck((current) => (current.pages === moved ? { slideId, pages: before } : current));
+            if (nextIndex !== at && routedRef.current === slideId) showPage(at);
+          },
+        };
+      }),
+    [slideId, showPage],
   );
 
   const reorderPage = useCallback(
     async (from: number, to: number) => {
       if (from === to) return;
-      const before = pages;
-      const nextPages = [...before];
-      const [moved] = nextPages.splice(from, 1);
-      nextPages.splice(to, 0, moved);
-      setPages(nextPages);
-
-      const order = before.map((_, i) => i);
-      const [movedIdx] = order.splice(from, 1);
-      order.splice(to, 0, movedIdx);
-
-      remapNotesSessionCacheAfterReorder(slideId, order);
-
-      // Keep the user looking at the same page they were on before the drag.
-      let nextIndex = index;
-      if (index === from) nextIndex = to;
-      else if (from < index && to >= index) nextIndex = index - 1;
-      else if (from > index && to <= index) nextIndex = index + 1;
-      if (nextIndex !== index) goTo(nextIndex);
-
       try {
-        const res = await fetch(`/__slides/${encodeURIComponent(slideId)}/reorder`, {
-          method: 'PUT',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ order }),
+        await changePages((order) => {
+          if (from < 0 || to < 0 || from >= order.length || to >= order.length) return null;
+          const [moved] = order.splice(from, 1);
+          order.splice(to, 0, moved);
+          return {
+            order,
+            request: `/__slides/${encodeURIComponent(slideId)}/reorder`,
+            init: {
+              method: 'PUT',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ order }),
+            },
+          };
         });
-        if (!res.ok) {
-          const detail = await res.json().catch(() => ({ error: res.statusText }));
-          throw new Error(detail.error ?? `HTTP ${res.status}`);
-        }
       } catch (err) {
-        setPages(before);
-        const inverse = order.map((_, i) => order.indexOf(i));
-        remapNotesSessionCacheAfterReorder(slideId, inverse);
         toast.error(`Reorder failed: ${String((err as Error).message ?? err)}`);
       }
     },
-    [pages, index, slideId, goTo],
+    [slideId, changePages],
   );
 
   const addPage = useCallback(
     async (afterIndex: number) => {
-      const before = pages;
-      if (afterIndex < -1 || afterIndex >= before.length) return;
-      const at = afterIndex + 1;
-      const nextPages = [...before];
-      nextPages.splice(at, 0, BlankPage);
-      setPages(nextPages);
-      const restore = [...before.map((_, i) => (i < at ? i : i + 1)), -1];
-      remapNotesSessionCacheAfterReorder(
-        slideId,
-        nextPages.map((_, i) => (i < at ? i : i === at ? -1 : i - 1)),
-      );
-      const showPage = (i: number) =>
-        setSearchParams(
-          (prev) => {
-            const next = new URLSearchParams(prev);
-            next.set('p', String(i + 1));
-            return next;
-          },
-          { replace: true },
-        );
-      showPage(at);
-
       try {
-        const res = await fetch(`/__slides/${encodeURIComponent(slideId)}/pages`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ afterIndex }),
+        const changed = await changePages((order) => {
+          if (afterIndex < -1 || afterIndex >= order.length) return null;
+          order.splice(afterIndex + 1, 0, -1);
+          return {
+            order,
+            request: `/__slides/${encodeURIComponent(slideId)}/pages`,
+            init: {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ afterIndex }),
+            },
+            show: afterIndex + 1,
+          };
         });
-        if (!res.ok) {
-          const detail = await res.json().catch(() => ({ error: res.statusText }));
-          throw new Error(detail.error ?? `HTTP ${res.status}`);
-        }
-        toast.success(format(t.thumbnailRail.toastAdded, { n: at + 1 }));
+        if (changed) toast.success(format(t.thumbnailRail.toastAdded, { n: afterIndex + 2 }));
       } catch (err) {
-        setPages(before);
-        remapNotesSessionCacheAfterReorder(slideId, restore);
-        setSearchParams(
-          (prev) => {
-            const shown = Number(prev.get('p') ?? '1') - 1;
-            if (!Number.isFinite(shown) || shown < at) return prev;
-            const next = new URLSearchParams(prev);
-            next.set('p', String(Math.max(1, shown)));
-            return next;
-          },
-          { replace: true },
-        );
         toast.error(`${t.thumbnailRail.toastAddFailed}: ${String((err as Error).message ?? err)}`);
       }
     },
-    [pages, slideId, setSearchParams, t.thumbnailRail],
+    [slideId, changePages, t.thumbnailRail],
   );
 
   const addPageHere = useMemo(
@@ -304,60 +405,46 @@ export function Slide() {
 
   const duplicatePage = useCallback(
     async (i: number) => {
-      const before = pages;
-      if (i < 0 || i >= before.length) return;
-      const nextPages = [...before];
-      nextPages.splice(i + 1, 0, before[i]);
-      setPages(nextPages);
-      if (index > i) goTo(index + 1);
-
       try {
-        const res = await fetch(`/__slides/${encodeURIComponent(slideId)}/pages/${i}/duplicate`, {
-          method: 'POST',
+        const changed = await changePages((order) => {
+          if (i < 0 || i >= order.length) return null;
+          order.splice(i + 1, 0, i);
+          return {
+            order,
+            request: `/__slides/${encodeURIComponent(slideId)}/pages/${i}/duplicate`,
+            init: { method: 'POST' },
+          };
         });
-        if (!res.ok) {
-          const detail = await res.json().catch(() => ({ error: res.statusText }));
-          throw new Error(detail.error ?? `HTTP ${res.status}`);
-        }
-        toast.success(format(t.thumbnailRail.toastDuplicated, { n: i + 1 }));
+        if (changed) toast.success(format(t.thumbnailRail.toastDuplicated, { n: i + 1 }));
       } catch (err) {
-        setPages(before);
         toast.error(
           `${t.thumbnailRail.toastDuplicateFailed}: ${String((err as Error).message ?? err)}`,
         );
       }
     },
-    [pages, index, slideId, goTo, t.thumbnailRail],
+    [slideId, changePages, t.thumbnailRail],
   );
 
   const deletePage = useCallback(
     async (i: number) => {
-      const before = pages;
-      if (i < 0 || i >= before.length || before.length <= 1) return;
-      const nextPages = before.slice(0, i).concat(before.slice(i + 1));
-      setPages(nextPages);
-      if (index >= i && index > 0) {
-        const target = index === i ? Math.min(index, nextPages.length - 1) : index - 1;
-        goTo(target);
-      }
-
       try {
-        const res = await fetch(`/__slides/${encodeURIComponent(slideId)}/pages/${i}`, {
-          method: 'DELETE',
+        const changed = await changePages((order) => {
+          if (i < 0 || i >= order.length || order.length <= 1) return null;
+          order.splice(i, 1);
+          return {
+            order,
+            request: `/__slides/${encodeURIComponent(slideId)}/pages/${i}`,
+            init: { method: 'DELETE' },
+          };
         });
-        if (!res.ok) {
-          const detail = await res.json().catch(() => ({ error: res.statusText }));
-          throw new Error(detail.error ?? `HTTP ${res.status}`);
-        }
-        toast.success(format(t.thumbnailRail.toastDeleted, { n: i + 1 }));
+        if (changed) toast.success(format(t.thumbnailRail.toastDeleted, { n: i + 1 }));
       } catch (err) {
-        setPages(before);
         toast.error(
           `${t.thumbnailRail.toastDeleteFailed}: ${String((err as Error).message ?? err)}`,
         );
       }
     },
-    [pages, index, slideId, goTo, t.thumbnailRail],
+    [slideId, changePages, t.thumbnailRail],
   );
 
   const thumbnailActions = useMemo<ThumbnailActions | undefined>(
@@ -376,7 +463,7 @@ export function Slide() {
     // When showSlideUi is false the read-only <Player> is rendered and owns
     // keyboard navigation (including step-aware advance/retreat). Attaching this
     // page-nav handler too would race it and skip <Steps> reveals, so bail out.
-    if (playMode || !showSlideUi) return;
+    if (playMode || curtain || !showSlideUi) return;
     const onKey = (e: KeyboardEvent) => {
       if (
         isTypingTarget(e.target) ||
@@ -409,19 +496,21 @@ export function Slide() {
         return;
       }
       if (e.key === 'f' || e.key === 'F') {
-        setPlayMode('fullscreen');
+        present('fullscreen');
       } else if (e.key === 'Enter') {
-        setPlayMode('window');
+        present('window');
       } else if (e.key === 'p' || e.key === 'P') {
         if (slideId) openPresenterWindow(slideId);
-        setPlayMode('window');
+        present('window');
       } else if (import.meta.env.DEV && (e.key === 'd' || e.key === 'D')) {
         setDesignOpen((v) => !v);
+      } else if (import.meta.env.DEV && (e.key === 'a' || e.key === 'A')) {
+        toggleAgent();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [index, goTo, playMode, slideId, overviewOpen]);
+  }, [index, goTo, playMode, curtain, slideId, overviewOpen, toggleAgent, present]);
 
   if (error) {
     return (
@@ -462,8 +551,9 @@ export function Slide() {
           transition={presented.slide.transition}
           index={presented.index}
           onIndexChange={presentReady ? goTo : noop}
-          onExit={() => setPlayMode(null)}
+          onExit={exitPresent}
           controls
+          curtain={!prefersReducedMotion}
           slideId={presented.slideId}
           onSwitchSlide={switchPresentedSlide}
           fullscreen={playMode === 'fullscreen'}
@@ -685,8 +775,11 @@ export function Slide() {
       <InspectorProvider
         slideId={slideId}
         pageIndex={index}
-        panelHidden={designOpen}
-        onPanelOpen={() => setDesignOpen(false)}
+        panelHidden={designOpen || agentOpen}
+        onPanelOpen={() => {
+          setDesignOpen(false);
+          setDockOpen(false);
+        }}
       >
         <SelectionReporter />
         <div className="flex h-dvh flex-col overflow-hidden bg-sidebar text-foreground">
@@ -725,7 +818,6 @@ export function Slide() {
                   </TabsList>
                 </Tabs>
               )}
-              {import.meta.env.DEV && <AgentConnectedBadge />}
             </div>
 
             <div className="col-span-3 row-start-2 flex min-w-0 justify-center sm:col-span-1 sm:col-start-2 sm:row-start-1">
@@ -805,6 +897,12 @@ export function Slide() {
                       />
                     )}
                     <DropdownMenuGroup>
+                      {narrowToolbar && import.meta.env.DEV && (
+                        <DropdownMenuItem onClick={toggleAgent}>
+                          <Sparkles />
+                          {t.agent.openTitle}
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuItem onClick={() => setCommandOpen(true)}>
                         <Terminal />
                         {t.commandMenu.trigger}
@@ -819,6 +917,7 @@ export function Slide() {
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}
+              {import.meta.env.DEV && view === 'slides' && !narrowToolbar && <AgentToggleButton />}
               {view === 'slides' && !narrowToolbar && (
                 <DesignToggleButton active={designOpen} onToggle={() => setDesignOpen((v) => !v)} />
               )}
@@ -830,7 +929,7 @@ export function Slide() {
                     size="sm"
                     variant="brand"
                     aria-label={t.slide.present}
-                    onClick={() => setPlayMode(isMobile ? 'window' : 'fullscreen')}
+                    onClick={() => present(isMobile ? 'window' : 'fullscreen')}
                     className="rounded-r-none px-2.5 lg:px-3"
                   >
                     <Play className="size-3.5 fill-current" />
@@ -850,12 +949,12 @@ export function Slide() {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="min-w-[200px]">
                       <DropdownMenuGroup>
-                        <DropdownMenuItem onClick={() => setPlayMode('window')}>
+                        <DropdownMenuItem onClick={() => present('window')}>
                           <Play />
                           {t.slide.presentInWindow}
                           <DropdownMenuShortcut>↵</DropdownMenuShortcut>
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => setPlayMode('fullscreen')}>
+                        <DropdownMenuItem onClick={() => present('fullscreen')}>
                           <Maximize />
                           {t.slide.presentFullscreen}
                           <DropdownMenuShortcut>F</DropdownMenuShortcut>
@@ -863,7 +962,7 @@ export function Slide() {
                         <DropdownMenuItem
                           onClick={() => {
                             if (slideId) openPresenterWindow(slideId);
-                            setPlayMode('window');
+                            present('window');
                           }}
                         >
                           <MonitorSpeaker />
@@ -903,6 +1002,7 @@ export function Slide() {
                         ref={slideViewportRef}
                         data-inspector-root
                         data-slide-id={slideId}
+                        data-agent-provider={agentActivity?.provider}
                         className="relative min-h-0 min-w-0 flex-1 bg-background p-2 md:mx-2 md:mb-2 md:rounded-[10px] md:p-10 md:shadow-edge md:ring-1 md:ring-foreground/[0.06]"
                       />
                     }
@@ -927,7 +1027,8 @@ export function Slide() {
                     <InspectOverlay />
                     <InlineEditLayer />
                     <SaveBar />
-                    {import.meta.env.DEV && <CommentWidget />}
+                    {import.meta.env.DEV && <CommentLayer />}
+                    {agentActivity && <AgentPresence activity={agentActivity} revision={pages} />}
                   </EditorContextMenu>
                   {/* Mobile-only horizontal rail. Sits below the canvas and
                     pads its bottom for the iOS home indicator / Safari URL bar. */}
@@ -948,6 +1049,25 @@ export function Slide() {
                     design={slide.design}
                     designOpen={designOpen}
                     onCloseDesign={() => setDesignOpen(false)}
+                    agentOpen={agentOpen}
+                    page={{
+                      index,
+                      total: pageCount,
+                      component: pages[index],
+                      transition: pages[index]?.transition ?? slide.transition,
+                      inheritedTransition: !pages[index]?.transition && Boolean(slide.transition),
+                      themed: Boolean(slide.design),
+                    }}
+                    agent={
+                      import.meta.env.DEV && (
+                        <SlideAgentDock
+                          slideId={slideId}
+                          slideTitle={title}
+                          pageNumber={index + 1}
+                          totalPages={pageCount}
+                        />
+                      )
+                    }
                   />
                 </div>
                 {import.meta.env.DEV && (
@@ -980,15 +1100,16 @@ export function Slide() {
               currentIndex={index}
               exporting={exporting}
               handlers={{
-                onPresentWindow: () => setPlayMode('window'),
-                onPresentFullscreen: () => setPlayMode('fullscreen'),
+                onPresentWindow: () => present('window'),
+                onPresentFullscreen: () => present('fullscreen'),
                 onPresenterView: () => {
                   if (slideId) openPresenterWindow(slideId);
-                  setPlayMode('window');
+                  present('window');
                 },
                 onCopyLink: copyLink,
                 onOverview: () => setOverviewOpen(true),
                 onToggleDesignPanel: () => setDesignOpen((v) => !v),
+                onToggleAgentPanel: toggleAgent,
                 onExportHtml: exportHtml,
                 onExportPdf: exportPdf,
                 onExportPptx: exportPptx,
@@ -999,6 +1120,7 @@ export function Slide() {
             />
           )}
         </div>
+        <PresentCurtain opaque={curtain !== null} className="fixed z-[1000]" />
       </InspectorProvider>
     </HistoryProvider>
   );
@@ -1008,14 +1130,6 @@ const RAIL_WIDTH_STORAGE_KEY = 'open-slide:thumbnail-rail-width';
 const DEFAULT_RAIL_WIDTH = 264;
 const MIN_RAIL_WIDTH = 200;
 const MAX_RAIL_WIDTH = 480;
-
-function readStoredRailWidth(): number {
-  if (typeof window === 'undefined') return DEFAULT_RAIL_WIDTH;
-  const raw = window.localStorage.getItem(RAIL_WIDTH_STORAGE_KEY);
-  const parsed = raw == null ? Number.NaN : Number(raw);
-  if (!Number.isFinite(parsed)) return DEFAULT_RAIL_WIDTH;
-  return Math.min(MAX_RAIL_WIDTH, Math.max(MIN_RAIL_WIDTH, parsed));
-}
 
 function ResizableRail(props: {
   pages: SlideModule['default'];
@@ -1028,103 +1142,26 @@ function ResizableRail(props: {
   onOverview?: () => void;
 }) {
   const t = useLocale();
-  const [width, setWidth] = useState<number>(readStoredRailWidth);
-  const [resizing, setResizing] = useState(false);
-  const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    window.localStorage.setItem(RAIL_WIDTH_STORAGE_KEY, String(width));
-  }, [width]);
-
-  useEffect(() => {
-    if (!resizing) return;
-    const prev = {
-      cursor: document.body.style.cursor,
-      userSelect: document.body.style.userSelect,
-    };
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
-    return () => {
-      document.body.style.cursor = prev.cursor;
-      document.body.style.userSelect = prev.userSelect;
-    };
-  }, [resizing]);
-
-  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.currentTarget.setPointerCapture(e.pointerId);
-    dragRef.current = { startX: e.clientX, startWidth: width };
-    setResizing(true);
-  };
-
-  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!dragRef.current) return;
-    const delta = e.clientX - dragRef.current.startX;
-    const next = Math.min(
-      MAX_RAIL_WIDTH,
-      Math.max(MIN_RAIL_WIDTH, dragRef.current.startWidth + delta),
-    );
-    setWidth(next);
-  };
-
-  const onPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    }
-    dragRef.current = null;
-    setResizing(false);
-  };
-
-  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    const step = e.shiftKey ? 32 : 8;
-    if (e.key === 'ArrowLeft') {
-      e.preventDefault();
-      e.stopPropagation();
-      setWidth((w) => Math.max(MIN_RAIL_WIDTH, w - step));
-    } else if (e.key === 'ArrowRight') {
-      e.preventDefault();
-      e.stopPropagation();
-      setWidth((w) => Math.min(MAX_RAIL_WIDTH, w + step));
-    } else if (e.key === 'Home') {
-      e.preventDefault();
-      e.stopPropagation();
-      setWidth(DEFAULT_RAIL_WIDTH);
-    }
-  };
+  const [width, setWidth] = useStoredWidth(
+    RAIL_WIDTH_STORAGE_KEY,
+    DEFAULT_RAIL_WIDTH,
+    MIN_RAIL_WIDTH,
+    MAX_RAIL_WIDTH,
+  );
 
   return (
     <div className="relative hidden shrink-0 md:block" style={{ width }}>
       <ThumbnailRail width={width} {...props} />
-      {/* biome-ignore lint/a11y/useSemanticElements: focusable resize handle (splitter pattern), not a static <hr> */}
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        aria-label={t.thumbnailRail.resizeRail}
-        aria-valuenow={width}
-        aria-valuemin={MIN_RAIL_WIDTH}
-        aria-valuemax={MAX_RAIL_WIDTH}
-        tabIndex={0}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
-        onKeyDown={onKeyDown}
-        onDoubleClick={() => setWidth(DEFAULT_RAIL_WIDTH)}
-        className={cn(
-          'group/resize absolute inset-y-0 right-0 z-20 w-1.5 translate-x-1/2 cursor-col-resize touch-none outline-none',
-          'focus-visible:bg-brand/20',
-        )}
-      >
-        <span
-          aria-hidden
-          className={cn(
-            'pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-brand opacity-0 transition-opacity duration-150',
-            'group-hover/resize:opacity-100 group-focus-visible/resize:opacity-100',
-            resizing && 'opacity-100',
-          )}
-        />
-      </div>
+      <ResizeHandle
+        width={width}
+        min={MIN_RAIL_WIDTH}
+        max={MAX_RAIL_WIDTH}
+        defaultWidth={DEFAULT_RAIL_WIDTH}
+        edge="right"
+        label={t.thumbnailRail.resizeRail}
+        onResize={setWidth}
+        className="right-0 translate-x-1/2"
+      />
     </div>
   );
 }
@@ -1170,45 +1207,37 @@ function EditorMenuItems({
   );
 }
 
-function AgentConnectedBadge() {
-  const t = useLocale();
-  const connected = useAgentSocketConnected();
-  return (
-    <TooltipProvider delay={200}>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <button
-              type="button"
-              aria-label={connected ? t.slide.agentConnected : t.slide.agentDisconnected}
-              className="ml-1 flex shrink-0 cursor-help items-center gap-1.5 rounded-[3px] border border-hairline bg-card px-1.5 py-0.5 text-[10.5px] text-foreground/85 outline-none transition-colors duration-150 hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring/30"
-            >
-              <span aria-hidden className="relative flex size-1.5 items-center justify-center">
-                {connected ? (
-                  <>
-                    <span className="absolute inline-flex size-full rounded-full bg-emerald-500 opacity-60 motion-safe:animate-ping" />
-                    <span className="relative inline-flex size-1.5 rounded-full bg-emerald-500" />
-                  </>
-                ) : (
-                  <span className="relative inline-flex size-1.5 rounded-full bg-rose-500" />
-                )}
-              </span>
-              <span className="hidden xl:inline">
-                {connected ? t.slide.agentConnected : t.slide.agentDisconnected}
-              </span>
-            </button>
+function SlideAgentDock({
+  slideId,
+  slideTitle,
+  pageNumber,
+  totalPages,
+}: {
+  slideId: string;
+  slideTitle: string;
+  pageNumber: number;
+  totalPages: number;
+}) {
+  const { selected, comments } = useInspector();
+  const context = useMemo<AgentTurnContext>(
+    () => ({
+      slideId,
+      slideTitle,
+      pageNumber,
+      totalPages,
+      pendingComments: comments.length,
+      selection: selected
+        ? {
+            line: selected.line,
+            column: selected.column,
+            tagName: selected.anchor.tagName.toLowerCase(),
+            text: (selected.anchor.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 120),
           }
-        />
-        <TooltipContent
-          side="bottom"
-          align="start"
-          className="w-max max-w-[min(520px,calc(100vw-2rem))] text-center leading-relaxed"
-        >
-          {connected ? t.slide.agentConnectedTooltip : t.slide.agentDisconnectedTooltip}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+        : null,
+    }),
+    [slideId, slideTitle, pageNumber, totalPages, comments.length, selected],
   );
+  return <AgentPanel context={context} onClose={() => setDockOpen(false)} />;
 }
 
 function SelectionReporter() {
@@ -1236,13 +1265,14 @@ function SlideViewportNavigation({
   canPrev: boolean;
   canNext: boolean;
 }) {
-  const { active, inlineEdit } = useInspector();
+  const { mode, inlineEdit } = useInspector();
   const isMobile = useIsMobile();
   const editing = !!inlineEdit;
+  const browsing = mode === 'preview';
 
   useWheelPageNavigation({
     ref: targetRef,
-    enabled: !active && !editing,
+    enabled: browsing && !editing,
     canPrev,
     canNext,
     onPrev,
@@ -1254,7 +1284,7 @@ function SlideViewportNavigation({
   // zones). Interactive slide content keeps its tap via the hook's passthrough.
   useClickPageNavigation({
     ref: targetRef,
-    enabled: isMobile && !active && !editing,
+    enabled: isMobile && browsing && !editing,
     edgeRatio: 0.18,
     canPrev,
     canNext,

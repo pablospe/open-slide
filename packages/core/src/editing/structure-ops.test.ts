@@ -45,62 +45,6 @@ const deck = lines(
   '',
 );
 
-describe('remove-element', () => {
-  it('removes a middle child with its line and nothing else', () => {
-    const r = ok(run(deck, '<p style', { kind: 'remove-element' }));
-    expect(r.source).toBe(
-      lines(
-        'const Cover = () => (',
-        '  <div style={{ padding: 40 }}>',
-        '    <h1>Title</h1>',
-        '    {/* keep */}',
-        '    <footer>End</footer>',
-        '  </div>',
-        ');',
-        '',
-        'export default [Cover];',
-        '',
-      ),
-    );
-  });
-
-  it('removes the first and the last child without leaving a blank line', () => {
-    const first = ok(run(deck, '<h1>', { kind: 'remove-element' }));
-    expect(first.source).toBe(deck.replace('    <h1>Title</h1>\n', ''));
-    const last = ok(run(deck, '<footer>', { kind: 'remove-element' }));
-    expect(last.source).toBe(deck.replace('    <footer>End</footer>\n', ''));
-  });
-
-  it('removes an inline element and one of its surrounding spaces', () => {
-    const src = lines(
-      'export default [() => (',
-      '  <p>Hello <b>bold</b> world <i>x</i></p>',
-      ')];',
-      '',
-    );
-    expect(ok(run(src, '<b>', { kind: 'remove-element' })).source).toBe(
-      src.replace('<b>bold</b> ', ''),
-    );
-    expect(ok(run(src, '<i>', { kind: 'remove-element' })).source).toBe(
-      src.replace('<i>x</i>', ''),
-    );
-  });
-
-  it('keeps tabs and CRLF-free formatting outside the removed line untouched', () => {
-    const src = lines(
-      'export default [() => (',
-      '\t<div>',
-      '\t\t<span a="1"   b="2" />',
-      '\t\t<em>x</em>',
-      '\t</div>',
-      ')];',
-    );
-    expect(ok(run(src, '<em>', { kind: 'remove-element' })).source).toBe(
-      src.replace('\t\t<em>x</em>\n', ''),
-    );
-  });
-});
-
 describe('duplicate-element', () => {
   it('inserts a verbatim copy after a multi-line element and returns its location', () => {
     const r = ok(run(deck, '<p style', { kind: 'duplicate-element' }));
@@ -206,7 +150,6 @@ describe('move-element', () => {
 
 describe('structural refusals', () => {
   const all: EditOp[] = [
-    { kind: 'remove-element' },
     { kind: 'duplicate-element' },
     { kind: 'move-element', direction: 'later' },
   ];
@@ -298,7 +241,7 @@ describe('structural refusals', () => {
 
   it('never falls back to an enclosing element', () => {
     const { line } = locate(deck, '<h1>');
-    const r = refused(applyEdit(deck, line, 8, [{ kind: 'remove-element' }]));
+    const r = refused(applyEdit(deck, line, 8, [{ kind: 'duplicate-element' }]));
     expect(r.code).toBe('not-found');
   });
 
@@ -306,7 +249,7 @@ describe('structural refusals', () => {
     const { line, column } = locate(deck, '<h1>');
     const r = refused(
       applyEdit(deck, line, column, [
-        { kind: 'remove-element' },
+        { kind: 'duplicate-element' },
         { kind: 'set-style', key: 'color', value: 'red' },
       ]),
     );
@@ -338,7 +281,7 @@ describe('applyEditBatch with structural ops', () => {
     const footer = locate(deck, '<footer>');
     const { source, results } = applyEditBatch(deck, [
       { ...h1, ops: [{ kind: 'set-style', key: 'color', value: 'red' }] },
-      { ...footer, ops: [{ kind: 'remove-element' }] },
+      { ...footer, ops: [{ kind: 'duplicate-element' }] },
     ]);
     expect(source).toBe(deck);
     expect(results.every((r) => !r.ok)).toBe(true);
@@ -358,7 +301,7 @@ describe('applyEditBatch with structural ops', () => {
 
   it('reports the refusal code', () => {
     const root = locate(deck, '<div style');
-    const { results } = applyEditBatch(deck, [{ ...root, ops: [{ kind: 'remove-element' }] }]);
+    const { results } = applyEditBatch(deck, [{ ...root, ops: [{ kind: 'duplicate-element' }] }]);
     expect(results[0]).toMatchObject({ ok: false, code: 'root' });
   });
 });
