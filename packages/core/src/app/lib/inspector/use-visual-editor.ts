@@ -22,6 +22,7 @@ import {
   readInlineLayout,
   resetGestureOps,
   restoreTransform,
+  SIZE_BOUNDS_STYLES,
   sizeOps,
   styleOp,
   Z_INDEX_KEY,
@@ -72,6 +73,30 @@ function anchorsPositionedDescendants(node: HTMLElement): boolean {
   );
 }
 
+const LAYER_LAYOUT_KEYS = new Set<string>([
+  ...Object.keys(LAYER_POSITION_STYLE),
+  ...LAYER_INSET_KEYS,
+]);
+
+export function planResetGesture(
+  selection: SelectedTarget[],
+  scope: ResetGestureScope,
+): { edits: VisualEdit[]; keptPosition: boolean } {
+  let keptPosition = false;
+  const edits = independentTargets(selection).flatMap((target) => {
+    let ops = resetGestureOps(readInlineLayout(target.anchor), scope);
+    if (
+      ops.some((op) => op.kind === 'set-style' && op.key in LAYER_POSITION_STYLE) &&
+      anchorsPositionedDescendants(target.anchor)
+    ) {
+      keptPosition = true;
+      ops = ops.filter((op) => op.kind !== 'set-style' || !LAYER_LAYOUT_KEYS.has(op.key));
+    }
+    return ops.length ? [{ ...target, ops }] : [];
+  });
+  return { edits, keptPosition };
+}
+
 function preserveLayerLayout(
   edits: VisualEdit[],
   sourceTargets: Map<HTMLElement, SelectedTarget>,
@@ -104,10 +129,7 @@ function preserveLayerLayout(
       if (!resized && Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) return [];
       const dimensions = resized
         ? [
-            styleOp('minWidth', '0px'),
-            styleOp('minHeight', '0px'),
-            styleOp('maxWidth', 'none'),
-            styleOp('maxHeight', 'none'),
+            ...Object.entries(SIZE_BOUNDS_STYLES).map(([key, value]) => styleOp(key, value)),
             styleOp('width', `${original.width}px`),
             styleOp('height', `${original.height}px`),
           ]
@@ -346,25 +368,7 @@ export function useVisualEditor({
       if (committing) return;
       const canvas = readCanvas();
       if (!canvas || selection.some((target) => !canTransform(target, canvas))) return;
-      let keptPosition = false;
-      const edits = independentTargets(selection).flatMap((target) => {
-        let ops = resetGestureOps(readInlineLayout(target.anchor), scope);
-        if (
-          ops.some((op) => op.kind === 'set-style' && op.key in LAYER_POSITION_STYLE) &&
-          anchorsPositionedDescendants(target.anchor)
-        ) {
-          keptPosition = true;
-          ops = ops.filter(
-            (op) =>
-              op.kind !== 'set-style' ||
-              !(
-                op.key in LAYER_POSITION_STYLE ||
-                (LAYER_INSET_KEYS as readonly string[]).includes(op.key)
-              ),
-          );
-        }
-        return ops.length ? [{ ...target, ops }] : [];
-      });
+      const { edits, keptPosition } = planResetGesture(selection, scope);
       if (keptPosition) toast.info(t.inspector.resetKeptPosition);
       bufferBatch(edits);
     },
