@@ -428,6 +428,7 @@ export function useVisualEditor({
       nudge,
       selectParent,
       selectAll,
+      removeElements,
     }),
     [
       snapping,
@@ -441,6 +442,7 @@ export function useVisualEditor({
       nudge,
       selectParent,
       selectAll,
+      removeElements,
     ],
   );
 }

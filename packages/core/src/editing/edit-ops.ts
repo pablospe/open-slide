@@ -785,6 +785,9 @@ function buildTextContentSplices(
   // source text would drift across whitespace runs and move text out of child
   // elements. Diff in prevText space and map the offsets back instead.
   const offsets = current === prevText ? null : alignCollapsedText(current, prevText);
+  if (current !== prevText && !offsets) {
+    return { error: 'no text candidate matches the current value' };
+  }
   const diff = textDiff(offsets ? prevText : current, value);
   if (diff.start === diff.end && diff.value === '') return [];
   const start = offsets ? offsets[diff.start] : diff.start;
@@ -973,7 +976,10 @@ function collectCallSiteCandidates(ast: t.Node, componentName: string): TextCand
     if (!t.isJSXElement(n)) return;
     const elName = n.openingElement.name;
     if (t.isJSXIdentifier(elName) && elName.name === componentName) {
-      const whole = collapseText(textRangeContent(collectTextRangeParts(n)));
+      // The whole text is kept as rendered so a preserved-whitespace prevText
+      // still finds it; matching collapses it when that is allowed.
+      const whole = textRangeContent(collectTextRangeParts(n));
+      const collapsed = collapseText(whole);
       // Its literals are only part of what this call site renders.
       if (hasDynamicText(n)) {
         out.push({ current: whole, splice: () => ({ from: 0, to: 0, text: '' }), shadow: true });
@@ -982,9 +988,11 @@ function collectCallSiteCandidates(ast: t.Node, componentName: string): TextCand
       const own: TextCandidate[] = [];
       collectTextCandidates(n, own);
       out.push(...own);
+      // A call site whose text spans markup — even inside a single wrapper —
+      // only counts through this shadow, so it must still weigh in on ambiguity.
       if (
-        meaningfulChildren(n).length > 1 &&
-        !own.some((candidate) => collapseText(candidate.current) === whole)
+        collapsed !== '' &&
+        !own.some((candidate) => collapseText(candidate.current) === collapsed)
       ) {
         out.push({ current: whole, splice: () => ({ from: 0, to: 0, text: '' }), shadow: true });
       }

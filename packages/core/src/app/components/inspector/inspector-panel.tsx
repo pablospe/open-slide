@@ -485,10 +485,6 @@ export function InspectorPanel({
             {!multiple && (
               <div className="mt-auto">
                 <Separator />
-                <Disclosure title={t.inspector.leaveComment}>
-                  <CommentsSection selected={selected} onAdd={add} />
-                </Disclosure>
-                <Separator />
                 <Disclosure title={t.inspector.sourceSection}>
                   <div className="flex items-center justify-between gap-2 px-3.5 pb-3.5">
                     <span className="font-mono text-[10.5px] text-muted-foreground">

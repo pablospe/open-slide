@@ -149,13 +149,6 @@ function horizontalSpaceBefore(source: string, offset: number): number {
   return from;
 }
 
-function horizontalSpaceAfter(source: string, offset: number): number {
-  let to = offset;
-  while (to < source.length && (source[to] === ' ' || source[to] === '\t')) to++;
-  return to;
-}
-
-
 // DOM ids are page-global, so every `id` in the copy is dropped. React keys
 // only need to be unique among siblings: just the copied element's own `key`
 // can collide, while keys of lists mapped inside the copy must stay.
