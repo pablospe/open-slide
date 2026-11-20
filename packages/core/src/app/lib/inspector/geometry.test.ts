@@ -86,8 +86,9 @@ describe('snapMove', () => {
 
 describe('thirdLines', () => {
   it('splits a canvas dimension into thirds', () => {
-    expect(thirdLines(1920)).toEqual([640, 1280]);
-    expect(thirdLines(1080)).toEqual([360, 720]);
+    const canvas = { width: 1920, height: 1080 };
+    expect(thirdLines(canvas, 'x')).toEqual([640, 1280]);
+    expect(thirdLines(canvas, 'y')).toEqual([360, 720]);
   });
 });
 

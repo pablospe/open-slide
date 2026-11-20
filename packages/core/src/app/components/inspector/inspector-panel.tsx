@@ -38,6 +38,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { type DesignPalette, type DesignSystem, paletteTokenVar } from '@/lib/design';
 import { opaqueHex, rgbToHex } from '@/lib/inspector/color';
+import type { DesignSystem } from '@/lib/design';
 import { findSlideSource } from '@/lib/inspector/fiber';
 import { hasOnlyInlineTextChildren } from '@/lib/inspector/inline-text';
 import { countLocInstances, inspectorStatus } from '@/lib/inspector/source-location';
@@ -97,11 +98,13 @@ export function InspectorPanel({
   onTabChange,
   design,
   page,
+  design,
 }: {
   preferredTab: 'format' | 'arrange';
   onTabChange: (tab: 'format' | 'arrange') => void;
   design?: DesignSystem;
   page?: PageInfo;
+  design?: DesignSystem;
 }) {
   const {
     togglePanel,
