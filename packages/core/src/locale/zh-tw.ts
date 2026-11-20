@@ -280,9 +280,9 @@ export const zhTW: Locale = {
     resetAllOnly: '沒有可重設的移動或旋轉。可使用選單重設尺寸和圖層。',
     resetNothing: '沒有可重設的內容：沒有編輯器設定的移動、旋轉、尺寸或圖層。',
     resetKeptPosition: '已保留 position: relative，因為內部元素以它為定位基準。',
-    snapThirds: 'Thirds',
-    snapGrid: 'Grid',
-    gridSize: 'Grid size',
+    snapThirds: '三分線',
+    snapGrid: '網格',
+    gridSize: '網格大小',
     selectParent: '選取父層',
     selectAll: '全選',
     visualEditorHint:

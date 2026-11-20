@@ -285,9 +285,9 @@ export const ja: Locale = {
       'リセットする項目はありません。エディターが設定した移動、回転、サイズ、重なり順がありません。',
     resetKeptPosition:
       '内側の要素がこの要素を基準に配置されているため、position: relative を残しました。',
-    snapThirds: 'Thirds',
-    snapGrid: 'Grid',
-    gridSize: 'Grid size',
+    snapThirds: '三分割',
+    snapGrid: 'グリッド',
+    gridSize: 'グリッドサイズ',
     selectParent: '親要素を選択',
     selectAll: 'すべて選択',
     visualEditorHint:
