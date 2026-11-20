@@ -769,7 +769,57 @@ describe('addPageToDefaultExportInSource', () => {
     expect(addPageToDefaultExportInSource(badNotes, 0).ok).toBe(false);
   });
 
+  it('refuses a notes spread even when the page lands past its literal elements', () => {
+    const spread =
+      'const A = () => <div />;\nconst B = () => <div />;\n' +
+      "export const notes = [...['a', 'b']];\nexport default [A, B];";
+    expect(addPageToDefaultExportInSource(spread, 0)).toMatchObject({ ok: false, status: 422 });
+    expect(addPageToDefaultExportInSource(spread, 1)).toMatchObject({ ok: false, status: 422 });
+  });
+
+  it('keeps counting past a page number too large for a double', () => {
+    const source =
+      'const Page9007199254740992 = () => <div />;\nexport default [Page9007199254740992];';
+    expect(added(source, 0).name).toBe('Page9007199254740993');
+  });
+
   it('refuses a source that does not parse', () => {
     expect(addPageToDefaultExportInSource('export default [A,,', 0).ok).toBe(false);
+  });
+
+  it('keeps a same-line trailing comment with the statement it follows', () => {
+    const source = [
+      "import type { Page } from '@open-slide/core';",
+      '',
+      'const A: Page = () => <div />; // cover',
+      '// second',
+      'const B: Page = () => <div />;',
+      '',
+      'export default [B, A];',
+      '',
+    ].join('\n');
+    expect(added(source, -1).source).toContain(
+      [
+        'const A: Page = () => <div />; // cover',
+        "const Page1: Page = () => <div style={{ width: '100%', height: '100%' }} />;",
+        '',
+        '// second',
+        'const B: Page = () => <div />;',
+      ].join('\n'),
+    );
+  });
+
+  it('annotates with Page only when it is imported from @open-slide/core', () => {
+    const source = [
+      "import { Page } from './layout';",
+      '',
+      'const A = () => <Page />;',
+      '',
+      'export default [A];',
+      '',
+    ].join('\n');
+    expect(added(source, 0).source).toContain(
+      "const Page2 = () => <div style={{ width: '100%', height: '100%' }} />;",
+    );
   });
 });
